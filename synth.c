@@ -5,7 +5,7 @@
 #include <portaudio.h>
 
 #define SAMPLE_RATE 44100
-#define FRAMES_PER_BUFFER 512
+#define FRAMES_PER_BUFFER 256
 #define MASTER_VOL 0.25f
 #define ATTACK_TIME 0.02f
 #define RELEASE_TIME 0.05f
@@ -120,6 +120,12 @@ int main(int argc, char* argv[]) {
 
     SDL_Init(SDL_INIT_VIDEO);
     SDL_Window *window = SDL_CreateWindow("Chord Synth", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 400, 200, 0);
+
+    SDL_Renderer *renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
+
+    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
+    SDL_RenderClear(renderer);
+    SDL_RenderPresent(renderer);
 
     int running = 1;
     SDL_Event event;
