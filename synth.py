@@ -152,13 +152,8 @@ def run():
                              samplerate=SR, blocksize=BLOCKSIZE)
     stream.start()
 
-    # init pygame for keyboard
     pygame.init()
-    screen = pygame.display.set_mode((480, 120))
     pygame.display.set_caption('Chord Synth')
-
-
-
 
     running = True
     pressed_keys = set()
@@ -182,8 +177,6 @@ def run():
                     if name in KEY_TO_MIDI and name in pressed_keys:
                         pressed_keys.remove(name)
                         synth.note_off(KEY_TO_MIDI[name])
-
-
 
             pygame.display.flip()
             pygame.time.wait(10)
