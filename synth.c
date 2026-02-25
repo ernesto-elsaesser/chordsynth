@@ -25,6 +25,7 @@ typedef struct {
 
 typedef struct {
     Voice voices[MAX_VOICES];
+    float filter_state;
 } SynthData;
 
 // Constants for envelopes
@@ -44,6 +45,8 @@ static int patestCallback(const void *inputBuffer, void *outputBuffer,
                           void *userData) {
     SynthData *data = (SynthData*)userData;
     float *out = (float*)outputBuffer;
+
+    float alpha = 0.2f;  // low-pass filter coefficient
 
     for (unsigned int i = 0; i < framesPerBuffer; i++) {
         float sample_sum = 0.0f;
@@ -85,7 +88,12 @@ static int patestCallback(const void *inputBuffer, void *outputBuffer,
                 voice->phases[p] = fmod(voice->phases[p] + delta, 2.0 * M_PI);
             }
         }
-        *out++ = sample_sum * MASTER_VOL; // Left/Mono channel
+
+        // *out++ = sample_sum * MASTER_VOL; // Left/Mono channel
+        float raw_output = sample_sum * MASTER_VOL;
+        // low-pass filter
+        data->filter_state = data->filter_state + alpha * (raw_output - data->filter_state);
+        *out++ = data->filter_state;
     }
     return paContinue;
 }
