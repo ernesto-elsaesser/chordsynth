@@ -4,8 +4,8 @@
 #include <SDL2/SDL.h>
 #include <portaudio.h>
 
-#define SAMPLE_RATE 44100
-#define FRAMES_PER_BUFFER 256
+#define SAMPLE_RATE 16000  // Match mSBC bandwidth
+#define FRAMES_PER_BUFFER 64
 #define MASTER_VOL 0.25f
 #define ATTACK_TIME 0.02f
 #define RELEASE_TIME 0.05f
@@ -73,7 +73,14 @@ static int patestCallback(const void *inputBuffer, void *outputBuffer,
 
             // Synthesize 3 partials
             for (int p = 0; p < 3; p++) {
-                sample_sum += (float)(sin(voice->phases[p]) * WEIGHTS[p] * current_env);
+                // sine
+                // sample_sum += (float)(sin(voice->phases[p]) * WEIGHTS[p] * current_env);
+                // square
+                // sample_sum += (voice->phases[p] < M_PI) ? WEIGHTS[p] : -WEIGHTS[p];
+                // saw
+                float saw = (float)(voice->phases[p] / M_PI) - 1.0f;
+                sample_sum += saw * WEIGHTS[p] * current_env;
+
                 double delta = (2.0 * M_PI * voice->freqs[p]) / SAMPLE_RATE;
                 voice->phases[p] = fmod(voice->phases[p] + delta, 2.0 * M_PI);
             }
