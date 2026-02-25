@@ -16,7 +16,7 @@ import pygame
 # Audio parameters
 SR = 44100
 BLOCKSIZE = 512
-MASTER_VOL = 0.2
+MASTER_VOL = 0.25
 
 # Envelope times (seconds)
 ATTACK = 0.02
@@ -34,6 +34,19 @@ KEY_TO_MIDI = {
     'k': 72,  # C5
 }
 
+# Chord intervals per key according to the C major scale
+# C: major, D: minor, E: minor, F: major, G: major, A: minor, B: diminished, C: major
+KEY_TO_INTERVALS = {
+    'a': (0, 4, 7),  # C major
+    's': (0, 3, 7),  # D minor
+    'd': (0, 3, 7),  # E minor
+    'f': (0, 4, 7),  # F major
+    'g': (0, 4, 7),  # G major
+    'h': (0, 3, 7),  # A minor
+    'j': (0, 3, 6),  # B diminished
+    'k': (0, 4, 7),  # C major (octave)
+}
+
 
 def midi_to_freq(m):
     return 440.0 * 2 ** ((m - 69) / 12.0)
@@ -48,13 +61,13 @@ class Synth:
         self.attack_samples = int(ATTACK * self.sr)
         self.release_samples = int(RELEASE * self.sr)
 
-    def note_on(self, midi):
+    def note_on(self, midi, intervals=(0, 4, 7)):
         with self.lock:
             if midi in self.voices:
                 # already playing
                 return
-            # major triad: root, +4 semitones, +7 semitones
-            freqs = [midi_to_freq(midi + i) for i in (0, 4, 7)]
+            # build chord according to provided intervals
+            freqs = [midi_to_freq(midi + i) for i in intervals]
             phases = [0.0, 0.0, 0.0]
             voice = {
                 'freqs': freqs,
@@ -142,14 +155,10 @@ def run():
     # init pygame for keyboard
     pygame.init()
     screen = pygame.display.set_mode((480, 120))
-    pygame.display.set_caption('Simple 3-note Chord Synth (hold keys)')
-    font = pygame.font.SysFont(None, 20)
+    pygame.display.set_caption('Chord Synth')
 
-    instructions = [
-        'Press keys to play chords: a s d f g h j k',
-        'Major triad (root, +4, +7 semitones).',
-        'Close window or press ESC to exit.'
-    ]
+
+
 
     running = True
     pressed_keys = set()
@@ -166,24 +175,15 @@ def run():
                         break
                     if name in KEY_TO_MIDI and name not in pressed_keys:
                         pressed_keys.add(name)
-                        synth.note_on(KEY_TO_MIDI[name])
+                        intervals = KEY_TO_INTERVALS.get(name, (0, 4, 7))
+                        synth.note_on(KEY_TO_MIDI[name], intervals=intervals)
                 elif event.type == pygame.KEYUP:
                     name = pygame.key.name(event.key)
                     if name in KEY_TO_MIDI and name in pressed_keys:
                         pressed_keys.remove(name)
                         synth.note_off(KEY_TO_MIDI[name])
 
-            screen.fill((30, 30, 30))
-            y = 8
-            for line in instructions:
-                img = font.render(line, True, (220, 220, 220))
-                screen.blit(img, (8, y))
-                y += 22
 
-            # show currently pressed
-            status = 'Pressed: ' + ','.join(sorted(pressed_keys))
-            img = font.render(status, True, (180, 200, 255))
-            screen.blit(img, (8, y))
 
             pygame.display.flip()
             pygame.time.wait(10)
