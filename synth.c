@@ -114,7 +114,11 @@ void note_off(SynthData *data, int midi) {
 int main(int argc, char* argv[]) {
     SynthData data = {0};
 
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) < 0) return -1;
+    int status = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO);
+    if (status < 0) {
+        printf("Failed to initialize SDL!");
+        return -1;
+    }
 
     SDL_AudioSpec want, have;
     SDL_zero(want);
