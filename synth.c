@@ -34,8 +34,6 @@ double midi_to_freq(int m) {
     return 440.0 * pow(2.0, (m - 69.0) / 12.0);
 }
 
-// SDL Audio Callback
-// Note: SDL2 passes audio as a byte buffer (Uint8*), so we cast to float*
 void sdlAudioCallback(void* userData, Uint8* stream, int len) {
     SynthData* data = (SynthData*)userData;
     float* out = (float*)stream;
@@ -86,7 +84,6 @@ void sdlAudioCallback(void* userData, Uint8* stream, int len) {
     }
 }
 
-// Logic for Note On / Note Off remains the same as previous iterations
 void note_on(SynthData *data, int midi, int intervals[3]) {
     for (int i = 0; i < MAX_VOICES; i++) {
         if (data->voices[i].midi_note == midi && data->voices[i].state != VOICE_OFF) return;
@@ -119,22 +116,24 @@ int main(int argc, char* argv[]) {
 
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO) < 0) return -1;
 
-    // SDL Audio Setup
     SDL_AudioSpec want, have;
     SDL_zero(want);
     want.freq = SAMPLE_RATE;
-    want.format = AUDIO_F32; // 32-bit float audio
-    want.channels = 1;       // Mono
+    want.format = AUDIO_F32;
+    want.channels = 1;
     want.samples = FRAMES_PER_BUFFER;
     want.callback = sdlAudioCallback;
     want.userdata = &data;
 
     SDL_AudioDeviceID dev = SDL_OpenAudioDevice(NULL, 0, &want, &have, 0);
-    if (dev == 0) return -1;
+    if (dev == 0) {
+        printf("Failed to open audio device!");
+        return -1;
+    }
 
-    SDL_PauseAudioDevice(dev, 0); // Start audio
+    SDL_PauseAudioDevice(dev, 0);
 
-    SDL_Window* window = SDL_CreateWindow("SDL2 Only Synth", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 400, 200, 0);
+    SDL_Window* window = SDL_CreateWindow("SDL2 Only Synth", SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, 200, 200, 0);
 
     SDL_Renderer *renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255);
