@@ -1,1 +1,1 @@
-gcc synth.c -o synth -lSDL2 -lportaudio -lm
+gcc synth.c -o synth -lSDL2 -lm
