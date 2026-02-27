@@ -256,7 +256,7 @@ while running:
                 synth.key -= 12
             elif sc == SDL_SCANCODE_M: # L2
                 synth.key += 1
-            elif sc in SDL_SCANCODE_S: # R2
+            elif sc == SDL_SCANCODE_S: # R2
                 synth.key -= 1
             elif sc == SDL_SCANCODE_UP:
                 synth.mod = "m"  # switch between major and minor
