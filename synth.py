@@ -2,7 +2,6 @@
 import math
 import numpy as np
 import ctypes
-#from sdl2 import *
 from pysdl import *
 
 # Audio parameters
@@ -15,13 +14,34 @@ ATTACK = 0.02
 RELEASE = 0.05
 CUTOFF_HZ = 1200.0  # Low-pass filter cutoff
 
-SCANCODE_TO_MIDI = {
-    SDL_SCANCODE_SELECT: 60, # C
-    SDL_SCANCODE_RETURN: 62, # D
-    SDL_SCANCODE_B: 64, # E
-    SDL_SCANCODE_A: 69, # A
-    SDL_SCANCODE_Y: 65, # F
-    SDL_SCANCODE_X: 67, # G
+PITCH_TO_MIDI = {
+    "C": 60,
+    "D": 62,
+    "E": 64,
+    "F": 65,
+    "G": 67,
+    "A": 69,
+    "B": 71,
+}
+
+SCANCODE_TO_PITCH = {
+    SDL_SCANCODE_A: "C",
+    SDL_SCANCODE_S: "D",
+    SDL_SCANCODE_D: "E",
+    SDL_SCANCODE_F: "F",
+    SDL_SCANCODE_G: "G",
+    SDL_SCANCODE_H: "A",
+    SDL_SCANCODE_J: "B",
+}
+
+JBUTTON_TO_PITCH = {
+    0: "A", # A
+    1: "E", # B
+    2: "F", # Y
+    3: "G", # X
+    6: "C", # SELECT
+    7: "D", # START
+    # 8: MENU
 }
 
 
@@ -114,55 +134,75 @@ class Synth:
         result = (buf * MASTER_VOL).astype(np.float32)
         ctypes.memmove(stream, result.ctypes.data, length)
 
-def run():
 
-    status = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO)
-    if status != 0:
-        return
+status = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO)
+if status != 0:
+    exit()
 
-    synth = Synth()
-    desired = SDL_AudioSpec(SR, AUDIO_F32SYS, 1, BLOCKSIZE)
-    callback_func = SDL_AudioCallback(synth.audio_callback)
-    desired.callback = callback_func
-    devid = SDL_OpenAudioDevice(None, 0, desired, None, 0)
-    SDL_PauseAudioDevice(devid, 0)
+synth = Synth()
+desired = SDL_AudioSpec(SR, AUDIO_F32SYS, 1, BLOCKSIZE)
+callback_func = SDL_AudioCallback(synth.audio_callback)
+desired.callback = callback_func
+devid = SDL_OpenAudioDevice(None, 0, desired, None, 0)
+SDL_PauseAudioDevice(devid, 0)
 
-    window = SDL_CreateWindow(b"Sawtooth LPF Synth", SDL_WINDOWPOS_CENTERED,
-                              SDL_WINDOWPOS_CENTERED, 400, 300, SDL_WINDOW_SHOWN)
-    event = SDL_Event()
-    intervals = 0, 7
-    running = True
+window = SDL_CreateWindow(b"Sawtooth LPF Synth", SDL_WINDOWPOS_CENTERED,
+                          SDL_WINDOWPOS_CENTERED, 400, 300, SDL_WINDOW_SHOWN)
+wsurf = SDL_GetWindowSurface(window)
 
-    try:
-        while running:
-            while SDL_PollEvent(ctypes.byref(event)) != 0:
-                if event.type == SDL_QUIT: running = False
-                elif event.type == SDL_KEYDOWN:
-                    sc = event.key.keysym.scancode
-                    if sc == SDL_SCANCODE_ESCAPE:
-                        running = False
-                    elif sc == SDL_SCANCODE_UP:
-                        intervals = 0, 4, 7 
-                    elif sc == SDL_SCANCODE_DOWN:
-                        intervals = 0, 3, 7 
-                    else:
-                        midi = SCANCODE_TO_MIDI.get(sc)
-                        if midi is not None:
-                            synth.note_on(midi, intervals)
-                elif event.type == SDL_KEYUP:
-                    sc = event.key.keysym.scancode
-                    if sc in {SDL_SCANCODE_UP, SDL_SCANCODE_DOWN}:
-                        intervals = 0, 7
-                    else:
-                        midi = SCANCODE_TO_MIDI.get(sc)
-                        if midi is not None:
-                            synth.note_off(midi)
-            SDL_Delay(10)
-    finally:
-        SDL_CloseAudioDevice(devid)
-        SDL_DestroyWindow(window)
-        SDL_Quit()
+wrect = SDL_Rect(0, 0, ww, wh)
+event = SDL_Event()
+jstick = None
+intervals = 0, 7
+running = True
 
-if __name__ == '__main__':
-    run()
+while running:
+    while SDL_PollEvent(ctypes.byref(event)) != 0:
+        if event.type == SDL_QUIT:
+            running = False
+        elif event.type == SDL_KEYDOWN:
+            sc = event.key.keysym.scancode
+            if sc in (SDL_SCANCODE_POWER, SDL_SCANCODE_ESCAPE):
+                running = False
+            elif sc == SDL_SCANCODE_UP:
+                intervals = 0, 4, 7 
+            elif sc == SDL_SCANCODE_DOWN:
+                intervals = 0, 3, 7 
+            else:
+                pitch = SCANCODE_TO_PITCH.get(sc)
+                if pitch is not None:
+                    synth.note_on(pitch, intervals)
+        elif event.type == SDL_KEYUP:
+            sc = event.key.keysym.scancode
+            if sc in {SDL_SCANCODE_UP, SDL_SCANCODE_DOWN}:
+                intervals = 0, 7
+            else:
+                pitch = SCANCODE_TO_PITCH.get(sc)
+                if pitch is not None:
+                    synth.note_off(pitch)
+        elif event.type == SDL_JOYDEVICEADDED:
+            jstick = SDL_JoystickOpen(event.jdevice.which)
+        elif event.type == SDL_JOYHATMOTION:
+            sc = event.jhat.value
+            if sc == SDL_HAT_UP:
+                intervals = 0, 4, 7
+            elif sc == SDL_HAT_LEFT:
+                intervals = 0, 7
+            elif sc == SDL_HAT_DOWN:
+                intervals = 0, 3, 7
+        elif event.type == SDL_JOYBUTTONDOWN:
+            button = event.jbutton.button
+            pitch = JBUTTON_TO_PITCH.get(button)
+            if pitch is not None:
+                synth.note_on(pitch, intervals)
+        elif event.type == SDL_JOYBUTTONUP:
+            button = event.jbutton.button
+            pitch = JBUTTON_TO_PITCH.get(button)
+            if pitch is not None:
+                synth.note_off(pitch)
 
+    SDL_Delay(10)
+
+SDL_CloseAudioDevice(devid)
+SDL_DestroyWindow(window)
+SDL_Quit()
