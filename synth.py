@@ -25,23 +25,21 @@ PITCH_TO_MIDI = {
 }
 
 SCANCODE_TO_PITCH = {
-    SDL_SCANCODE_A: "C",
-    SDL_SCANCODE_S: "D",
-    SDL_SCANCODE_D: "E",
-    SDL_SCANCODE_F: "F",
-    SDL_SCANCODE_G: "G",
-    SDL_SCANCODE_H: "A",
-    SDL_SCANCODE_J: "B",
-}
-
-JBUTTON_TO_PITCH = {
-    0: "A", # A
-    1: "E", # B
-    2: "F", # Y
-    3: "G", # X
-    6: "C", # SELECT
-    7: "D", # START
-    # 8: MENU
+    SDL_SCANCODE_1: "C",
+    SDL_SCANCODE_2: "D",
+    SDL_SCANCODE_3: "E",
+    SDL_SCANCODE_4: "F",
+    SDL_SCANCODE_5: "G",
+    SDL_SCANCODE_6: "A",
+    SDL_SCANCODE_7: "B",
+    SDL_SCANCODE_RSHIFT: "C",
+    SDL_SCANCODE_SPACE: "C",
+    SDL_SCANCODE_RETURN: "D",
+    SDL_SCANCODE_B: "E",
+    SDL_SCANCODE_Y: "F",
+    SDL_SCANCODE_X: "G",
+    SDL_SCANCODE_A: "A",
+    SDL_SCANCODE_H: "B",
 }
 
 
@@ -154,7 +152,6 @@ renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERE
 event = SDL_Event()
 jstick = None
 intervals = 0, 7
-pressed = set()
 running = True
 
 while running:
@@ -166,9 +163,11 @@ while running:
             if sc in (SDL_SCANCODE_POWER, SDL_SCANCODE_ESCAPE):
                 running = False
             elif sc == SDL_SCANCODE_UP:
-                intervals = 0, 4, 7 
+                intervals = 0, 4, 7
+            elif sc == SDL_SCANCODE_LEFT:
+                intervals = 0, 7
             elif sc == SDL_SCANCODE_DOWN:
-                intervals = 0, 3, 7 
+                intervals = 0, 3, 7
             else:
                 pitch = SCANCODE_TO_PITCH.get(sc)
                 if pitch is not None:
@@ -191,18 +190,6 @@ while running:
                 intervals = 0, 7
             elif sc == SDL_HAT_DOWN:
                 intervals = 0, 3, 7
-        elif event.type == SDL_JOYBUTTONDOWN:
-            button = event.jbutton.button
-            pressed.add(button)
-            pitch = JBUTTON_TO_PITCH.get(button)
-            if pitch is not None:
-                synth.note_on(pitch, intervals)
-        elif event.type == SDL_JOYBUTTONUP:
-            button = event.jbutton.button
-            pressed.remove(button)
-            pitch = JBUTTON_TO_PITCH.get(button)
-            if pitch is not None:
-                synth.note_off(pitch)
 
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255)
     SDL_RenderClear(renderer)
@@ -210,8 +197,8 @@ while running:
     for offset in intervals:
         rct = SDL_Rect(20 + offset * 40, 20, 20, 20)
         SDL_RenderFillRect(renderer, rct)
-    for offset in range(9):
-        on = offset in pressed
+    for offset, pitch in enumerate(PITCH_TO_MIDI):
+        on = pitch in synth.voices
         SDL_SetRenderDrawColor(renderer, 0, 255 if on else 0, 0 if on else 255, 255)
         rct = SDL_Rect(20 + offset * 40, 50, 20, 20)
         SDL_RenderFillRect(renderer, rct)
