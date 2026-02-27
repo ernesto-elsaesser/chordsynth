@@ -59,11 +59,12 @@ class Synth:
         # Filter coefficient alpha
         self.alpha = (2.0 * math.pi * CUTOFF_HZ / self.sr) / (2.0 * math.pi * CUTOFF_HZ / self.sr + 1.0)
 
-    def note_on(self, midi, intervals):
-        if midi in self.voices:
+    def note_on(self, pitch, intervals):
+        if pitch in self.voices:
             return
+        midi = PITCH_TO_MIDI[pitch]
         freqs = [midi_to_freq(midi + i) for i in intervals]
-        self.voices[midi] = {
+        self.voices[pitch] = {
             'freqs': freqs,
             'phases': [0.0, 0.0, 0.0],
             'state': 'on',
@@ -73,8 +74,8 @@ class Synth:
             'lpf_state': 0.0  # Memory for the one-pole filter
         }
 
-    def note_off(self, midi):
-        v = self.voices.get(midi)
+    def note_off(self, pitch):
+        v = self.voices.get(pitch)
         if v and v['state'] == 'on':
             v['state'] = 'release'
             v['release_pos'] = 0
@@ -84,7 +85,7 @@ class Synth:
         buf = np.zeros(frames, dtype=np.float32)
         remove_list = []
 
-        for midi, v in list(self.voices.items()):
+        for pitch, v in list(self.voices.items()):
             # --- Envelope Logic ---
             if v['state'] == 'on':
                 if v['env_pos'] < self.attack_samples:
@@ -103,7 +104,7 @@ class Synth:
                 v['release_pos'] += frames
                 v['env_level'] = float(env[n_release-1] if n_release > 0 else 0.0)
                 if v['release_pos'] >= self.release_samples:
-                    remove_list.append(midi)
+                    remove_list.append(pitch)
 
             # --- Sawtooth Synthesis ---
             voice_buf = np.zeros(frames, dtype=np.float32)
@@ -128,8 +129,8 @@ class Synth:
 
             buf += filtered_voice
 
-        for midi in remove_list:
-            del self.voices[midi]
+        for pitch in remove_list:
+            del self.voices[pitch]
 
         result = (buf * MASTER_VOL).astype(np.float32)
         ctypes.memmove(stream, result.ctypes.data, length)
@@ -152,6 +153,7 @@ window = SDL_CreateWindow(b"Synth", 0, 0, 640, 480, SDL_WINDOW_SHOWN)
 wsurf = SDL_GetWindowSurface(window)
 wrect = SDL_Rect(0, 0, wsurf.contents.w, wsurf.contents.h)
 SDL_FillRect(wsurf, wrect, 0)
+SDL_UpdateWindowSurface(window)
 
 event = SDL_Event()
 jstick = None
