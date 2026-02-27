@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 import math
 import ctypes
-from pysdl import *  # local PySDL2 folder
 
-# TODO:
-# - show current key
-# - chord variation live
+# local PySDL2 folder
+from pysdl import *
+from pysdl.sdlttf import *
 
+# TODO: chord variation live
 
 SR = 16000
 BLOCKSIZE = 512
@@ -40,19 +40,18 @@ SCALE = [None, 0, 2, 4, 5, 7, 9, 11, 12]  # major scale
 
 NAMES = ["A", "A#", "B", "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#"]
 
-
-def midi_to_freq(shift):
-    return 440.0 * 2 ** (shift / 12.0)
-
+FONT_PATH = b"DejaVuSansMono.ttf"
 
 STATE_ON = 2
 STATE_RELEASE = 1
 STATE_OFF = 2
 
+
 class Voice:
-           
-    def __init__(self, root, offsets):
-           
+
+    def __init__(self, root, offsets, name):
+
+        self.name = name
         self.freqs = [440.0 * 2 ** ((root + o) / 12.0) for o in offsets]
         self.weights = [1.0] * len(offsets)
         self.phases = [0.0] * len(offsets)
@@ -64,7 +63,7 @@ class Voice:
 
 
 class Synth:
-    def __init__(self, samplerate=SR):
+    def __init__(self, samplerate: int = SR):
         self.sr = samplerate
         self.voices = {}
         self.attack_samples = int(ATTACK * self.sr)
@@ -76,9 +75,9 @@ class Synth:
         # Filter coefficient alpha
         self.alpha = (2.0 * math.pi * CUTOFF_HZ / self.sr) / (2.0 * math.pi * CUTOFF_HZ / self.sr + 1.0)
 
-    def note_on(self, degree):
+    def note_on(self, degree: int) -> Voice:
         if degree in self.voices:
-            return
+            return self.voices[degree]
         root = self.key + SCALE[degree]
         chord = [0]
         suffix = self.mod
@@ -95,10 +94,12 @@ class Synth:
         if self.mod == "7":
             chord.append(11)
             suffix += "7"
-        self.voices[degree] = Voice(root, chord)
-        return NAMES[root % 12] + suffix
+        name = NAMES[root % 12] + suffix
+        voice = Voice(root, chord, name)
+        self.voices[degree] = voice
+        return voice
 
-    def note_off(self, degree):
+    def note_off(self, degree: int):
         v = self.voices.get(degree)
         if v and v.state == STATE_ON:
             v.state = STATE_RELEASE
@@ -187,9 +188,19 @@ class Synth:
             out_ptr[n] = out_buf[n] * MASTER_VOL
 
 
-status = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO)
-if status != 0:
-    exit()
+SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO)
+TTF_Init()
+
+window = SDL_CreateWindow(b"Synth", 0, 0, 640, 480, SDL_WINDOW_SHOWN)
+
+wsurf = SDL_GetWindowSurface(window)
+ww = wsurf.contents.w
+wh = wsurf.contents.h
+wrect = SDL_Rect(0, 0, ww, wh)
+
+SDL_FillRect(wsurf, wrect, 0)
+
+# renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC)
 
 synth = Synth()
 
@@ -199,17 +210,18 @@ desired.callback = callback_func
 devid = SDL_OpenAudioDevice(None, 0, desired, None, 0)
 SDL_PauseAudioDevice(devid, 0)
 
-window = SDL_CreateWindow(b"Synth", 0, 0, 640, 480, SDL_WINDOW_SHOWN)
-renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC)
+font = TTF_OpenFont(FONT_PATH, 48)
+font_color = SDL_Color(255, 255, 255, 255)
 
 event = SDL_Event()
-chord_name = None
 running = True
 
 while running:
     while SDL_PollEvent(ctypes.byref(event)) != 0:
+
         if event.type == SDL_QUIT:
             running = False
+
         elif event.type == SDL_KEYDOWN:
             sc = event.key.keysym.scancode
             if sc in (SDL_SCANCODE_POWER, SDL_SCANCODE_ESCAPE):
@@ -233,7 +245,13 @@ while running:
             else:
                 degree = SCANCODE_TO_DEGREE.get(sc)
                 if degree is not None:
-                    chord_name = synth.note_on(degree)
+                    voice = synth.note_on(degree)
+                    chord_name = voice.name.encode()
+                    SDL_FillRect(wsurf, wrect, 0)
+                    tsurf = TTF_RenderText_Solid(font, chord_name, font_color)
+                    trect = SDL_Rect(100, 100, tsurf.contents.w, tsurf.contents.h)
+                    SDL_BlitSurface(tsurf, None, wsurf, trect)
+
         elif event.type == SDL_KEYUP:
             sc = event.key.keysym.scancode
             if sc in {SDL_SCANCODE_UP, SDL_SCANCODE_DOWN, SDL_SCANCODE_LEFT, SDL_SCANCODE_RIGHT}:
@@ -243,16 +261,10 @@ while running:
                 if degree is not None:
                     synth.note_off(degree)
 
-    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255)
-    SDL_RenderClear(renderer)
-    if chord_name is not None:
-        print(chord_name)
-        # TODO: print current chord via TTF module
-    SDL_RenderPresent(renderer)
-    
     SDL_Delay(10)
 
 SDL_CloseAudioDevice(devid)
-SDL_DestroyRenderer(renderer)
+TTF_CloseFont(font)
+TTF_Quit()
 SDL_DestroyWindow(window)
 SDL_Quit()
