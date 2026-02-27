@@ -10,7 +10,7 @@ from pysdl import *  # local PySDL2 folder
 
 SR = 16000
 BLOCKSIZE = 512
-MASTER_VOL = 0.3
+MASTER_VOL = 0.2
 
 ATTACK = 0.02
 RELEASE = 0.05
@@ -25,6 +25,7 @@ SCANCODE_TO_DEGREE = {
     SDL_SCANCODE_5: 5,
     SDL_SCANCODE_6: 6,
     SDL_SCANCODE_7: 7,
+    SDL_SCANCODE_8: 8,
     # SDL_SCANCODE_RSHIFT: 1,
     SDL_SCANCODE_SPACE: 1,
     SDL_SCANCODE_RETURN: 2,
@@ -35,11 +36,29 @@ SCANCODE_TO_DEGREE = {
     SDL_SCANCODE_H: 7,
 }
 
-SCALE = [None, 0, 2, 4, 5, 7, 9, 11]  # major scale
+SCALE = [None, 0, 2, 4, 5, 7, 9, 11, 12]  # major scale
 
 
 def midi_to_freq(shift):
     return 440.0 * 2 ** (shift / 12.0)
+
+
+STATE_ON = 2
+STATE_RELEASE = 1
+STATE_OFF = 2
+
+class Voice:
+           
+    def __init__(self, root, offsets):
+           
+        self.freqs = [440.0 * 2 ** ((root + o) / 12.0) for o in offsets]
+        self.weights = [1.0] * len(offsets)
+        self.phases = [0.0] * len(offsets)
+        self.state = STATE_ON
+        self.env_pos = 0
+        self.env_level = 0.0
+        self.release_pos = 0
+        self.lpf_state = 0.0  # Memory for the one-pole filter
 
 
 class Synth:
@@ -50,7 +69,7 @@ class Synth:
         self.release_samples = int(RELEASE * self.sr)
 
         self.key = -9  # steps from A4, start at C4
-        self.mod = "maj"
+        self.mod = ""
 
         # Filter coefficient alpha
         self.alpha = (2.0 * math.pi * CUTOFF_HZ / self.sr) / (2.0 * math.pi * CUTOFF_HZ / self.sr + 1.0)
@@ -63,7 +82,7 @@ class Synth:
         if self.mod == "sus4":
             chord.append(5)
         elif self.mod != "5":
-            is_maj = degree in {1, 4, 5}
+            is_maj = degree in {1, 4, 5, 8}
             if self.mod == "m":
                 is_maj = not is_maj
             chord.append(4 if is_maj else 3)
@@ -71,22 +90,13 @@ class Synth:
         chord.append(6 if is_dim else 7)
         if self.mod == "7":
             chord.append(11)
-        freqs = [440.0 * 2 ** ((root + i) / 12.0) for i in chord]
-        self.voices[degree] = {
-            'freqs': freqs,
-            'phases': [0.0, 0.0, 0.0],
-            'state': 'on',
-            'env_pos': 0,
-            'env_level': 0.0,
-            'release_pos': 0,
-            'lpf_state': 0.0  # Memory for the one-pole filter
-        }
+        self.voices[degree] = Voice(root, chord)
 
     def note_off(self, degree):
         v = self.voices.get(degree)
-        if v and v['state'] == 'on':
-            v['state'] = 'release'
-            v['release_pos'] = 0
+        if v and v.state == STATE_ON:
+            v.state = STATE_RELEASE
+            v.release_pos = 0
 
     def audio_callback(self, userdata, stream, length):
         frames = length // 4
@@ -97,13 +107,13 @@ class Synth:
 
         for degree, v in self.voices.items():
             # --- Envelope Logic ---
-            if v['state'] == 'on':
-                if v['env_pos'] < self.attack_samples:
-                    n_attack = min(self.attack_samples - v['env_pos'], frames)
+            if v.state == STATE_ON:
+                if v.env_pos < self.attack_samples:
+                    n_attack = min(self.attack_samples - v.env_pos, frames)
                     # Linear interpolation for attack
-                    attack_start = v['env_level']
+                    attack_start = v.env_level
                     attack_end = 1.0
-                    attack_duration = self.attack_samples - (v['env_pos'] - n_attack)
+                    attack_duration = self.attack_samples - (v.env_pos - n_attack)
                     
                     env = []
                     for i in range(frames):
@@ -113,15 +123,15 @@ class Synth:
                         else:
                             env.append(1.0)
                     
-                    v['env_pos'] += frames
-                    v['env_level'] = env[-1]
+                    v.env_pos += frames
+                    v.env_level = env[-1]
                 else:
                     env = [1.0] * frames
             else:
-                n_release = min(frames, max(self.release_samples - v['release_pos'], 0))
+                n_release = min(frames, max(self.release_samples - v.release_pos, 0))
                 env = []
-                release_start = v['env_level']
-                release_duration = self.release_samples - (v['release_pos'] - n_release) if n_release > 0 else 1.0
+                release_start = v.env_level
+                release_duration = self.release_samples - (v.release_pos - n_release) if n_release > 0 else 1.0
                 
                 for i in range(frames):
                     if i < n_release and release_duration > 0:
@@ -130,34 +140,33 @@ class Synth:
                     else:
                         env.append(0.0)
                 
-                v['release_pos'] += frames
-                v['env_level'] = env[n_release - 1] if n_release > 0 else 0.0
-                if v['release_pos'] >= self.release_samples:
+                v.release_pos += frames
+                v.env_level = env[n_release - 1] if n_release > 0 else 0.0
+                if v.release_pos >= self.release_samples:
                     remove_list.append(degree)
 
             # --- Sawtooth Synthesis ---
             voice_buf = [0.0] * frames
-            weights = [0.5, 0.3, 0.2]
             
-            for osc_idx, f in enumerate(v['freqs']):
+            for osc_idx, f in enumerate(v.freqs):
                 delta = 2.0 * math.pi * f / self.sr
-                phase = v['phases'][osc_idx]
+                phase = v.phases[osc_idx]
                 
                 for n in range(frames):
                     # Sawtooth formula: 2 * (phase / 2pi) - 1
                     sample = 2.0 * (phase / (2.0 * math.pi)) - 1.0
-                    voice_buf[n] += weights[osc_idx] * sample * env[n]
+                    voice_buf[n] += v.weights[osc_idx] * sample * env[n]
                     phase = (phase + delta) % (2.0 * math.pi)
                 
-                v['phases'][osc_idx] = phase
+                v.phases[osc_idx] = phase
 
             # --- One-Pole Low-Pass Filter ---
             filtered_voice = [0.0] * frames
-            last_y = v['lpf_state']
+            last_y = v.lpf_state
             for n in range(frames):
                 last_y = last_y + self.alpha * (voice_buf[n] - last_y)
                 filtered_voice[n] = last_y
-            v['lpf_state'] = last_y
+            v.lpf_state = last_y
 
             # Add to output buffer
             for n in range(frames):
@@ -202,9 +211,9 @@ while running:
                 synth.key += 12
             elif sc == SDL_SCANCODE_PAGEDOWN: # R1
                 synth.key -= 12
-            elif sc == SDL_SCANCODE_F1: # L2
+            elif sc in {SDL_SCANCODE_F1, SDL_SCANCODE_K}: # L2
                 synth.key += 1
-            elif sc == SDL_SCANCODE_F2: # R2
+            elif sc in {SDL_SCANCODE_F2, SDL_SCANCODE_J}: # R2
                 synth.key -= 1
             elif sc == SDL_SCANCODE_UP:
                 synth.mod = "m"  # switch between major and minor
