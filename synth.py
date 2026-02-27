@@ -151,7 +151,7 @@ def run():
                             synth.note_on(midi, intervals)
                 elif event.type == SDL_KEYUP:
                     sc = event.key.keysym.scancode
-                    elif sc in {SDL_SCANCODE_UP, SDL_SCANCODE_DOWN}:
+                    if sc in {SDL_SCANCODE_UP, SDL_SCANCODE_DOWN}:
                         intervals = 0, 7
                     else:
                         midi = SCANCODE_TO_MIDI.get(sc)
