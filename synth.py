@@ -26,9 +26,8 @@ SCANCODE_TO_DEGREE = {
     SDL_SCANCODE_6: 6,
     SDL_SCANCODE_7: 7,
     SDL_SCANCODE_8: 8,
-    # SDL_SCANCODE_RSHIFT: 1,
-    SDL_SCANCODE_SPACE: 1,
-    SDL_SCANCODE_RETURN: 2,
+    SDL_SCANCODE_SPACE: 1,  # SELECT
+    SDL_SCANCODE_RETURN: 2,  # START
     SDL_SCANCODE_B: 3,
     SDL_SCANCODE_Y: 4,
     SDL_SCANCODE_X: 5,
@@ -251,13 +250,13 @@ while running:
             sc = event.key.keysym.scancode
             if sc in (SDL_SCANCODE_POWER, SDL_SCANCODE_ESCAPE):
                 running = False
-            elif sc == SDL_SCANCODE_PAGEUP: # L1
+            elif sc == SDL_SCANCODE_L: # L1
                 synth.key += 12
-            elif sc == SDL_SCANCODE_PAGEDOWN: # R1
+            elif sc == SDL_SCANCODE_R: # R1
                 synth.key -= 12
-            elif sc in {SDL_SCANCODE_F1, SDL_SCANCODE_K}: # L2
+            elif sc == SDL_SCANCODE_M: # L2
                 synth.key += 1
-            elif sc in {SDL_SCANCODE_F2, SDL_SCANCODE_J}: # R2
+            elif sc in SDL_SCANCODE_S: # R2
                 synth.key -= 1
             elif sc == SDL_SCANCODE_UP:
                 synth.mod = "m"  # switch between major and minor
