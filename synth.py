@@ -94,6 +94,8 @@ class Synth:
             suffix = "" if is_maj else "m"
         is_dim = degree == 7
         chord.append(6 if is_dim else 7)
+        if is_dim:
+            suffix = "dim"
         if self.mod == "7":
             chord.append(11)
             suffix += "7"
@@ -251,13 +253,13 @@ while running:
             if sc in (SDL_SCANCODE_POWER, SDL_SCANCODE_ESCAPE):
                 running = False
             elif sc == SDL_SCANCODE_L: # L1
-                synth.key += 12
-            elif sc == SDL_SCANCODE_R: # R1
                 synth.key -= 12
+            elif sc == SDL_SCANCODE_R: # R1
+                synth.key += 12
             elif sc == SDL_SCANCODE_M: # L2
-                synth.key += 1
-            elif sc == SDL_SCANCODE_S: # R2
                 synth.key -= 1
+            elif sc == SDL_SCANCODE_S: # R2
+                synth.key += 1
             elif sc == SDL_SCANCODE_UP:
                 synth.mod = "m"  # switch between major and minor
             elif sc == SDL_SCANCODE_DOWN:
