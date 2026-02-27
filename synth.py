@@ -25,7 +25,6 @@ SCANCODE_TO_DEGREE = {
     SDL_SCANCODE_5: 5,
     SDL_SCANCODE_6: 6,
     SDL_SCANCODE_7: 7,
-    SDL_SCANCODE_8: 8,
     SDL_SCANCODE_SPACE: 1,  # SELECT
     SDL_SCANCODE_RETURN: 2,  # START
     SDL_SCANCODE_B: 3,
@@ -35,9 +34,27 @@ SCANCODE_TO_DEGREE = {
     SDL_SCANCODE_H: 7,
 }
 
-SCALE = [None, 0, 2, 4, 5, 7, 9, 11, 12]  # major scale
+SCALE = [None, 0, 2, 4, 5, 7, 9, 11]  # major scale
 
-NAMES = ["A", "A#", "B", "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#"]
+CHORDS = {
+    "": [[], [4, 7], [3, 7], [3, 7], [4, 7], [4, 7], [3, 7], [3, 6]],
+    "m": [[], [3, 7], [4, 7], [4, 7], [3, 7], [3, 7], [4, 7], [4, 7]],
+    "5": [[], [7], [7], [7], [7], [7], [7], [7]],
+    "7": [[], [4, 7, 11], [3, 7, 11], [3, 7, 11], [4, 7, 11], [4, 7, 11], [3, 7, 11], [3, 6, 11]],
+    "sus4": [[], [5, 7], [5, 7], [5, 7], [5, 7], [5, 7], [5, 7], [5, 7]],
+}
+
+ROOT_NAMES = ["A", "A#", "B", "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#"]
+CHORD_NAMES = {
+    "4+7": "",
+    "3+7": "m",
+    "3+6": "dim",
+    "7": "5",
+    "4+7+11": "7",
+    "3+7+11": "m7",
+    "3+6+11": "m7b5",
+    "5+7": "sus4",
+}
 
 FONT_PATHS = [
     "DejaVuSans.ttf",
@@ -52,9 +69,11 @@ STATE_OFF = 2
 
 class Voice:
 
-    def __init__(self, root, offsets, name):
+    def __init__(self, root, above):
 
-        self.name = name
+        chord_code = "+".join(str(i) for i in above)
+        self.name = ROOT_NAMES[root % 12] + CHORD_NAMES[chord_code]
+        offsets = [0] + above
         self.freqs = [440.0 * 2 ** ((root + o) / 12.0) for o in offsets]
         self.weights = [1.0] * len(offsets)
         self.phases = [0.0] * len(offsets)
@@ -82,25 +101,8 @@ class Synth:
         if degree in self.voices:
             return self.voices[degree]
         root = self.key + SCALE[degree]
-        chord = [0]
-        suffix = self.mod
-        if self.mod == "sus4":
-            chord.append(5)
-        elif self.mod != "5":
-            is_maj = degree in {1, 4, 5, 8}
-            if self.mod == "m":
-                is_maj = not is_maj
-            chord.append(4 if is_maj else 3)
-            suffix = "" if is_maj else "m"
-        is_dim = degree == 7
-        chord.append(6 if is_dim else 7)
-        if is_dim:
-            suffix = "dim"
-        if self.mod == "7":
-            chord.append(11)
-            suffix += "7"
-        name = NAMES[root % 12] + suffix
-        voice = Voice(root, chord, name)
+        chord = CHORDS[self.mod][degree]
+        voice = Voice(root, chord)
         self.voices[degree] = voice
         return voice
 
