@@ -2,7 +2,7 @@
 import math
 import numpy as np
 import ctypes
-from pysdl import *
+from pysdl import *  # local PySDL2 folder
 
 # Audio parameters
 SR = 16000
@@ -149,15 +149,12 @@ devid = SDL_OpenAudioDevice(None, 0, desired, None, 0)
 SDL_PauseAudioDevice(devid, 0)
 
 window = SDL_CreateWindow(b"Synth", 0, 0, 640, 480, SDL_WINDOW_SHOWN)
-
-wsurf = SDL_GetWindowSurface(window)
-wrect = SDL_Rect(0, 0, wsurf.contents.w, wsurf.contents.h)
-SDL_FillRect(wsurf, wrect, 0)
-SDL_UpdateWindowSurface(window)
+renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC)
 
 event = SDL_Event()
 jstick = None
 intervals = 0, 7
+pressed = set()
 running = True
 
 while running:
@@ -196,17 +193,33 @@ while running:
                 intervals = 0, 3, 7
         elif event.type == SDL_JOYBUTTONDOWN:
             button = event.jbutton.button
+            pressed.add(button)
             pitch = JBUTTON_TO_PITCH.get(button)
             if pitch is not None:
                 synth.note_on(pitch, intervals)
         elif event.type == SDL_JOYBUTTONUP:
             button = event.jbutton.button
+            pressed.remove(button)
             pitch = JBUTTON_TO_PITCH.get(button)
             if pitch is not None:
                 synth.note_off(pitch)
 
+    SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255)
+    SDL_RenderClear(renderer)
+    SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255)
+    for offset in intervals:
+        rct = SDL_Rect(20 + offset * 40, 20, 20, 20)
+        SDL_RenderFillRect(renderer, rct)
+    for offset in range(9):
+        on = offset in pressed
+        SDL_SetRenderDrawColor(renderer, 0, 255 if on else 0, 0 if on else 255, 255)
+        rct = SDL_Rect(20 + offset * 40, 50, 20, 20)
+        SDL_RenderFillRect(renderer, rct)
+    SDL_RenderPresent(renderer)
+    
     SDL_Delay(10)
 
 SDL_CloseAudioDevice(devid)
+SDL_DestroyRenderer(renderer)
 SDL_DestroyWindow(window)
 SDL_Quit()
