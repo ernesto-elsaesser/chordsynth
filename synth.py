@@ -40,7 +40,11 @@ SCALE = [None, 0, 2, 4, 5, 7, 9, 11, 12]  # major scale
 
 NAMES = ["A", "A#", "B", "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#"]
 
-FONT_PATH = b"DejaVuSansMono.ttf"
+FONT_PATHS = [
+    "DejaVuSans.ttf",
+    "/usr/share/fonts/dejavu/DejaVuSans.ttf",
+    "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf",
+]
 
 STATE_ON = 2
 STATE_RELEASE = 1
@@ -199,6 +203,7 @@ wh = wsurf.contents.h
 wrect = SDL_Rect(0, 0, ww, wh)
 
 SDL_FillRect(wsurf, wrect, 0)
+SDL_UpdateWindowSurface(window)
 
 # renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC)
 
@@ -210,7 +215,15 @@ desired.callback = callback_func
 devid = SDL_OpenAudioDevice(None, 0, desired, None, 0)
 SDL_PauseAudioDevice(devid, 0)
 
-font = TTF_OpenFont(FONT_PATH, 48)
+font = 0
+for path in FONT_PATHS:
+    font = TTF_OpenFont(path.encode(), 64)
+    if font:
+        break
+if not font:
+    err = SDL_GetError()
+    print("FONT INIT ERROR", err)
+
 font_color = SDL_Color(255, 255, 255, 255)
 
 event = SDL_Event()
@@ -246,11 +259,14 @@ while running:
                 degree = SCANCODE_TO_DEGREE.get(sc)
                 if degree is not None:
                     voice = synth.note_on(degree)
-                    chord_name = voice.name.encode()
-                    SDL_FillRect(wsurf, wrect, 0)
-                    tsurf = TTF_RenderText_Solid(font, chord_name, font_color)
-                    trect = SDL_Rect(100, 100, tsurf.contents.w, tsurf.contents.h)
-                    SDL_BlitSurface(tsurf, None, wsurf, trect)
+                    if font is not None:
+                        chord_name = voice.name.encode()
+                        tsurf = TTF_RenderText_Solid(font, chord_name, font_color)
+                        trect = SDL_Rect(100, 100, tsurf.contents.w, tsurf.contents.h)
+                        SDL_FillRect(wsurf, wrect, 0)
+                        SDL_BlitSurface(tsurf, None, wsurf, trect)
+                        SDL_FreeSurface(tsurf)
+                        SDL_UpdateWindowSurface(window)
 
         elif event.type == SDL_KEYUP:
             sc = event.key.keysym.scancode
