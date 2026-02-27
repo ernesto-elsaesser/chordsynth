@@ -226,6 +226,18 @@ SDL_UpdateWindowSurface(window)
 
 text_color = SDL_Color(255, 255, 255, 255)
 
+
+def show_text(text: str, x: int, y: int):
+    if not font:
+        return
+    tsurf = TTF_RenderText_Solid(font, text.encode(), text_color)
+    trect = SDL_Rect(x, y, tsurf.contents.w, tsurf.contents.h)
+    SDL_FillRect(wsurf, wrect, 0)
+    SDL_BlitSurface(tsurf, None, wsurf, trect)
+    SDL_FreeSurface(tsurf)
+    SDL_UpdateWindowSurface(window)
+
+
 event = SDL_Event()
 running = True
 
@@ -257,16 +269,11 @@ while running:
                 synth.mod = "7"
             else:
                 degree = SCANCODE_TO_DEGREE.get(sc)
-                if degree is not None:
+                if degree is None:
+                    show_text("SC " + str(sc), 100, 100)
+                else:
                     voice = synth.note_on(degree)
-                    if font is not None:
-                        chord_name = voice.name.encode()
-                        tsurf = TTF_RenderText_Solid(font, chord_name, text_color)
-                        trect = SDL_Rect(100, 100, tsurf.contents.w, tsurf.contents.h)
-                        SDL_FillRect(wsurf, wrect, 0)
-                        SDL_BlitSurface(tsurf, None, wsurf, trect)
-                        SDL_FreeSurface(tsurf)
-                        SDL_UpdateWindowSurface(window)
+                    show_text(voice.name, 100, 100)
 
         elif event.type == SDL_KEYUP:
             sc = event.key.keysym.scancode
