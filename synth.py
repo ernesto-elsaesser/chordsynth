@@ -38,6 +38,8 @@ SCANCODE_TO_DEGREE = {
 
 SCALE = [None, 0, 2, 4, 5, 7, 9, 11, 12]  # major scale
 
+NAMES = ["A", "A#", "B", "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#"]
+
 
 def midi_to_freq(shift):
     return 440.0 * 2 ** (shift / 12.0)
@@ -79,6 +81,7 @@ class Synth:
             return
         root = self.key + SCALE[degree]
         chord = [0]
+        suffix = self.mod
         if self.mod == "sus4":
             chord.append(5)
         elif self.mod != "5":
@@ -86,11 +89,14 @@ class Synth:
             if self.mod == "m":
                 is_maj = not is_maj
             chord.append(4 if is_maj else 3)
+            suffix = "" if is_maj else "m"
         is_dim = degree == 7
         chord.append(6 if is_dim else 7)
         if self.mod == "7":
             chord.append(11)
+            suffix += "7"
         self.voices[degree] = Voice(root, chord)
+        return NAMES[root % 12] + suffix
 
     def note_off(self, degree):
         v = self.voices.get(degree)
@@ -197,6 +203,7 @@ window = SDL_CreateWindow(b"Synth", 0, 0, 640, 480, SDL_WINDOW_SHOWN)
 renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC)
 
 event = SDL_Event()
+chord_name = None
 running = True
 
 while running:
@@ -226,7 +233,7 @@ while running:
             else:
                 degree = SCANCODE_TO_DEGREE.get(sc)
                 if degree is not None:
-                    synth.note_on(degree)
+                    chord_name = synth.note_on(degree)
         elif event.type == SDL_KEYUP:
             sc = event.key.keysym.scancode
             if sc in {SDL_SCANCODE_UP, SDL_SCANCODE_DOWN, SDL_SCANCODE_LEFT, SDL_SCANCODE_RIGHT}:
@@ -238,7 +245,9 @@ while running:
 
     SDL_SetRenderDrawColor(renderer, 0, 0, 0, 255)
     SDL_RenderClear(renderer)
-    # TODO: print current chord via TTF module
+    if chord_name is not None:
+        print(chord_name)
+        # TODO: print current chord via TTF module
     SDL_RenderPresent(renderer)
     
     SDL_Delay(10)
