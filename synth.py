@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import math
-import numpy as np
 import ctypes
 from pysdl import *  # local PySDL2 folder
 
@@ -80,7 +79,9 @@ class Synth:
 
     def audio_callback(self, userdata, stream, length):
         frames = length // 4
-        buf = np.zeros(frames, dtype=np.float32)
+        
+        # Create output buffer as ctypes float array
+        out_buf = (ctypes.c_float * frames)()
         remove_list = []
 
         for pitch, v in list(self.voices.items()):
@@ -88,50 +89,76 @@ class Synth:
             if v['state'] == 'on':
                 if v['env_pos'] < self.attack_samples:
                     n_attack = min(self.attack_samples - v['env_pos'], frames)
-                    env = np.ones(frames, dtype=np.float32)
-                    env[:n_attack] = np.linspace(v['env_level'], 1.0, n_attack)
+                    # Linear interpolation for attack
+                    attack_start = v['env_level']
+                    attack_end = 1.0
+                    attack_duration = self.attack_samples - (v['env_pos'] - n_attack)
+                    
+                    env = []
+                    for i in range(frames):
+                        if i < n_attack:
+                            ratio = i / attack_duration if attack_duration > 0 else 1.0
+                            env.append(attack_start + (attack_end - attack_start) * ratio)
+                        else:
+                            env.append(1.0)
+                    
                     v['env_pos'] += frames
-                    v['env_level'] = float(env[-1])
+                    v['env_level'] = env[-1]
                 else:
-                    env = np.ones(frames, dtype=np.float32) * float(v['env_level'])
+                    env = [1.0] * frames
             else:
                 n_release = min(frames, max(self.release_samples - v['release_pos'], 0))
-                env = np.zeros(frames, dtype=np.float32)
-                if n_release > 0:
-                    env[:n_release] = np.linspace(v['env_level'], 0.0, n_release)
+                env = []
+                release_start = v['env_level']
+                release_duration = self.release_samples - (v['release_pos'] - n_release) if n_release > 0 else 1.0
+                
+                for i in range(frames):
+                    if i < n_release and release_duration > 0:
+                        ratio = i / release_duration
+                        env.append(release_start * (1.0 - ratio))
+                    else:
+                        env.append(0.0)
+                
                 v['release_pos'] += frames
-                v['env_level'] = float(env[n_release-1] if n_release > 0 else 0.0)
+                v['env_level'] = env[n_release - 1] if n_release > 0 else 0.0
                 if v['release_pos'] >= self.release_samples:
                     remove_list.append(pitch)
 
             # --- Sawtooth Synthesis ---
-            voice_buf = np.zeros(frames, dtype=np.float32)
+            voice_buf = [0.0] * frames
             weights = [0.5, 0.3, 0.2]
-            for i, f in enumerate(v['freqs']):
+            
+            for osc_idx, f in enumerate(v['freqs']):
                 delta = 2.0 * math.pi * f / self.sr
-                # Generate phase array
-                phases = (v['phases'][i] + delta * np.arange(frames)) % (2.0 * math.pi)
-                # Sawtooth formula: 2 * (phase / 2pi) - 1
-                samples = (2.0 * (phases / (2.0 * math.pi)) - 1.0).astype(np.float32)
-                v['phases'][i] = (v['phases'][i] + delta * frames) % (2.0 * math.pi)
-                voice_buf += weights[i] * samples * env
+                phase = v['phases'][osc_idx]
+                
+                for n in range(frames):
+                    # Sawtooth formula: 2 * (phase / 2pi) - 1
+                    sample = 2.0 * (phase / (2.0 * math.pi)) - 1.0
+                    voice_buf[n] += weights[osc_idx] * sample * env[n]
+                    phase = (phase + delta) % (2.0 * math.pi)
+                
+                v['phases'][osc_idx] = phase
 
             # --- One-Pole Low-Pass Filter ---
-            # y[n] = y[n-1] + alpha * (x[n] - y[n-1])
-            filtered_voice = np.zeros(frames, dtype=np.float32)
+            filtered_voice = [0.0] * frames
             last_y = v['lpf_state']
             for n in range(frames):
                 last_y = last_y + self.alpha * (voice_buf[n] - last_y)
                 filtered_voice[n] = last_y
             v['lpf_state'] = last_y
 
-            buf += filtered_voice
+            # Add to output buffer
+            for n in range(frames):
+                out_buf[n] += filtered_voice[n]
 
         for pitch in remove_list:
             del self.voices[pitch]
 
-        result = (buf * MASTER_VOL).astype(np.float32)
-        ctypes.memmove(stream, result.ctypes.data, length)
+        # Scale and copy to SDL stream
+        out_ptr = ctypes.cast(stream, ctypes.POINTER(ctypes.c_float))
+        for n in range(frames):
+            out_ptr[n] = out_buf[n] * MASTER_VOL
 
 
 status = SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO)
