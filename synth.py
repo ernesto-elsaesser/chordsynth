@@ -56,13 +56,12 @@ class Synth:
         self.attack_samples = int(ATTACK * self.sr)
         self.release_samples = int(RELEASE * self.sr)
 
-        self.intervals = (0, 4, 7)
-
         # Filter coefficient alpha
         self.alpha = (2.0 * math.pi * CUTOFF_HZ / self.sr) / (2.0 * math.pi * CUTOFF_HZ / self.sr + 1.0)
 
-    def note_on(self, midi, intervals=(0, 4, 7)):
-        if midi in self.voices: return
+    def note_on(self, midi, intervals):
+        if midi in self.voices:
+            return
         freqs = [midi_to_freq(midi + i) for i in intervals]
         self.voices[midi] = {
             'freqs': freqs,
@@ -129,7 +128,8 @@ class Synth:
 
             buf += filtered_voice
 
-        for midi in remove_list: del self.voices[midi]
+        for midi in remove_list:
+            del self.voices[midi]
 
         result = (buf * MASTER_VOL).astype(np.float32)
         ctypes.memmove(stream, result.ctypes.data, length)
@@ -140,17 +140,19 @@ if status != 0:
     exit()
 
 synth = Synth()
+
 desired = SDL_AudioSpec(SR, AUDIO_F32SYS, 1, BLOCKSIZE)
 callback_func = SDL_AudioCallback(synth.audio_callback)
 desired.callback = callback_func
 devid = SDL_OpenAudioDevice(None, 0, desired, None, 0)
 SDL_PauseAudioDevice(devid, 0)
 
-window = SDL_CreateWindow(b"Sawtooth LPF Synth", SDL_WINDOWPOS_CENTERED,
-                          SDL_WINDOWPOS_CENTERED, 400, 300, SDL_WINDOW_SHOWN)
-wsurf = SDL_GetWindowSurface(window)
+window = SDL_CreateWindow(b"Synth", 0, 0, 640, 480, SDL_WINDOW_SHOWN)
 
-wrect = SDL_Rect(0, 0, ww, wh)
+wsurf = SDL_GetWindowSurface(window)
+wrect = SDL_Rect(0, 0, wsurf.contents.w, wsurf.contents.h)
+SDL_FillRect(wsurf, wrect, 0)
+
 event = SDL_Event()
 jstick = None
 intervals = 0, 7
