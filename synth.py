@@ -57,10 +57,10 @@ class Synth:
         # Filter coefficient alpha
         self.alpha = (2.0 * math.pi * CUTOFF_HZ / self.sr) / (2.0 * math.pi * CUTOFF_HZ / self.sr + 1.0)
 
-    def note_on(self, pitch, intervals):
+    def note_on(self, pitch, intervals, shift):
         if pitch in self.voices:
             return
-        midi = PITCH_TO_MIDI[pitch]
+        midi = PITCH_TO_MIDI[pitch] + shift
         freqs = [midi_to_freq(midi + i) for i in intervals]
         self.voices[pitch] = {
             'freqs': freqs,
@@ -151,7 +151,8 @@ renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERE
 
 event = SDL_Event()
 jstick = None
-intervals = 0, 7
+intervals = 0, 4, 7
+shift = 0
 running = True
 
 while running:
@@ -163,19 +164,23 @@ while running:
             if sc in (SDL_SCANCODE_POWER, SDL_SCANCODE_ESCAPE):
                 running = False
             elif sc == SDL_SCANCODE_UP:
-                intervals = 0, 4, 7
-            elif sc == SDL_SCANCODE_LEFT:
-                intervals = 0, 7
+                shift = 12
             elif sc == SDL_SCANCODE_DOWN:
+                shift = -12
+            elif sc == SDL_SCANCODE_LEFT:
                 intervals = 0, 3, 7
+            elif sc == SDL_SCANCODE_RIGHT:
+                intervals = 0, 7
             else:
                 pitch = SCANCODE_TO_PITCH.get(sc)
                 if pitch is not None:
-                    synth.note_on(pitch, intervals)
+                    synth.note_on(pitch, intervals, shift)
         elif event.type == SDL_KEYUP:
             sc = event.key.keysym.scancode
             if sc in {SDL_SCANCODE_UP, SDL_SCANCODE_DOWN}:
-                intervals = 0, 7
+                shift = 0
+            if sc in {SDL_SCANCODE_LEFT, SDL_SCANCODE_RIGHT}:
+                intervals = 0, 4, 7
             else:
                 pitch = SCANCODE_TO_PITCH.get(sc)
                 if pitch is not None:
