@@ -1,0 +1,1 @@
+cp synth.py /run/media/ernesto/SHUTTLE/synth.pygame
