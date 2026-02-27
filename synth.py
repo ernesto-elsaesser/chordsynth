@@ -202,9 +202,6 @@ ww = wsurf.contents.w
 wh = wsurf.contents.h
 wrect = SDL_Rect(0, 0, ww, wh)
 
-SDL_FillRect(wsurf, wrect, 0)
-SDL_UpdateWindowSurface(window)
-
 # renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC)
 
 synth = Synth()
@@ -220,11 +217,14 @@ for path in FONT_PATHS:
     font = TTF_OpenFont(path.encode(), 64)
     if font:
         break
-if not font:
-    err = SDL_GetError()
-    print("FONT INIT ERROR", err)
 
-font_color = SDL_Color(255, 255, 255, 255)
+fill_color = 0
+if not font:
+    fill_color = SDL_Color(255, 0, 0, 255)
+SDL_FillRect(wsurf, wrect, fill_color)
+SDL_UpdateWindowSurface(window)
+
+text_color = SDL_Color(255, 255, 255, 255)
 
 event = SDL_Event()
 running = True
@@ -261,7 +261,7 @@ while running:
                     voice = synth.note_on(degree)
                     if font is not None:
                         chord_name = voice.name.encode()
-                        tsurf = TTF_RenderText_Solid(font, chord_name, font_color)
+                        tsurf = TTF_RenderText_Solid(font, chord_name, text_color)
                         trect = SDL_Rect(100, 100, tsurf.contents.w, tsurf.contents.h)
                         SDL_FillRect(wsurf, wrect, 0)
                         SDL_BlitSurface(tsurf, None, wsurf, trect)
