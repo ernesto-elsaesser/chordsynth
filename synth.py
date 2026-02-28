@@ -8,12 +8,12 @@ from pysdl.sdlttf import *
 
 # TODO: chord variation live
 
-SR = 16000
-BLOCKSIZE = 512
+SAMPLE_RATE = 16000
+BLOCK_SIZE = 512
 MASTER_VOL = 0.2
 
-ATTACK = 0.02
-RELEASE = 0.05
+ATTACK_TIME = 0.02
+RELEASE_TIME = 0.05
 CUTOFF_HZ = 1200.0  # Low-pass filter cutoff
 
 OP_PLAY = 1
@@ -86,136 +86,134 @@ FONT_PATHS = [
     b"/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf",
 ]
 
+ENV_OFF = 0
+ENV_ATTACK = 1
+ENV_SUSTAIN = 2
+ENV_RELEASE = 3
 
-class Voice:
+TWOPI = 2.0 * math.pi
 
-    def __init__(self, root, above):
 
-        chord_code = "+".join(str(i) for i in above)
-        self.name = ROOT_NAMES[root % 12] + CHORD_NAMES[chord_code]
-        offsets = [0] + above
-        self.freqs = [440.0 * 2 ** ((root + o) / 12.0) for o in offsets]
-        self.weights = [1.0] * len(offsets)
-        self.phases = [0.0] * len(offsets)
-        self.pressed = True
+class Oscillator:
+
+    def __init__(self, pitch: int):
+
+        frequency = 440.0 * 2 ** (pitch / 12)
+        self.delta = TWOPI * frequency / SAMPLE_RATE
+        self.volume = 0.0
+        self.phase = 0.0
+
+        self.env_state = ENV_OFF
         self.env_pos = 0
-        self.env_level = 0.0
-        self.release_pos = 0
         self.lpf_state = 0.0  # Memory for the one-pole filter
+
+        self.attack_samples = int(ATTACK_TIME * SAMPLE_RATE)
+        self.release_samples = int(RELEASE_TIME * SAMPLE_RATE)
+
+        # Filter coefficient alpha
+        self.lpf_alpha = (TWOPI * CUTOFF_HZ / SAMPLE_RATE) / (TWOPI * CUTOFF_HZ / SAMPLE_RATE + 1.0)
+
+    def attack(self, volume):
+
+        self.volume = volume
+
+        if self.env_state == ENV_OFF:
+            self.env_state = ENV_ATTACK
+            self.env_pos = 0
+        elif self.env_state == ENV_RELEASE:
+            self.env_state = ENV_ATTACK
+            # increase again from current level
+            level = self.env_pos / self.release_samples
+            self.env_pos = int(level * self.attack_samples)
+
+        # no changes if in ATTACK or SUSTAIN already
+
+    def release(self):
+                
+        if self.env_state == ENV_ATTACK:
+            self.env_state = ENV_RELEASE
+            # decrease again from current level
+            level = self.env_pos / self.attack_samples
+            self.env_pos = int(level * self.release_samples)
+        elif self.env_state == ENV_SUSTAIN:
+            self.env_state = ENV_RELEASE
+            self.env_pos = 0
+
+        # no changes if in RELEASE or OFF already
+
+    def sample(self) -> float:
+
+        if self.env_state == ENV_OFF:
+            return 0.0
+    
+        # Sawtooth formula: 2 * (phase / 2pi) - 1
+        sample = 2.0 * (self.phase / TWOPI) - 1.0
+        self.phase = (self.phase + self.delta) % TWOPI
+
+        sample *= self.volume
+
+        if self.env_state == ENV_ATTACK:
+            sample *= self.env_pos / self.attack_samples
+            self.env_pos += 1
+            if self.env_pos > self.attack_samples:
+                self.env_state = ENV_SUSTAIN
+                self.env_pos = 0
+
+        elif self.env_state == ENV_RELEASE:
+            sample *= self.env_pos / self.release_samples
+            self.env_pos += 1
+            if self.env_pos > self.release_samples:
+                self.env_state = ENV_OFF
+
+        return sample
+    
+        # Low-Pass One-Pole
+        # self.lpf_state += (sample - self.lpf_state) * self.lpf_alpha
+        # return self.lpf_state
 
 
 class Synth:
-    def __init__(self, samplerate: int = SR):
-        self.sr = samplerate
-        self.voices = {}
-        self.attack_samples = int(ATTACK * self.sr)
-        self.release_samples = int(RELEASE * self.sr)
 
-        self.key = -9  # steps from A4, start at C4
-        self.mod = MOD_NONE
+    def __init__(self):
 
-        # Filter coefficient alpha
-        self.alpha = (2.0 * math.pi * CUTOFF_HZ / self.sr) / (2.0 * math.pi * CUTOFF_HZ / self.sr + 1.0)
+        self.chord_name = "-"
+        self.oscs: dict[int, Oscillator] = {}
 
-    def shift_key(self, delta: int) -> str:
-        self.key += delta
-        return ROOT_NAMES[self.key % 12]
+    def change_chord(self, key: int, degree: int, mod: int):
 
-    def note_on(self, degree: int) -> Voice:
-        if degree in self.voices:
-            return self.voices[degree]
-        root = self.key + SCALE[degree]
-        chord = CHORDS[self.mod][degree]
-        voice = Voice(root, chord)
-        self.voices[degree] = voice
-        return voice
+        root = key + SCALE[degree]
+        chord = CHORDS[mod][degree]
+        intervals = [0] + chord
+        
+        volume = 1.0
+        for interval in intervals:
+            pitch = root + interval
+            osc = self.oscs.get(pitch)
+            if osc is None:
+                osc = Oscillator(pitch)
+                self.oscs[pitch] = osc
+            osc.attack(volume)
+            volume *= 0.6
+        
+        chord_code = "+".join(str(i) for i in chord)
+        self.chord_name = ROOT_NAMES[root % 12] + CHORD_NAMES[chord_code]
 
-    def note_off(self, degree: int):
-        v = self.voices.get(degree)
-        if v and v.pressed:
-            v.pressed = False
+    def release(self):
+
+        for osc in self.oscs.values():
+            osc.release()
 
     def audio_callback(self, userdata, stream, length):
-        frames = length // 4
-        
-        # Create output buffer as ctypes float array
-        out_buf = (ctypes.c_float * frames)()
-        remove_list = []
 
-        for degree, v in self.voices.items():
-            # --- Envelope Logic ---
-            if v.pressed:
-                if v.env_pos < self.attack_samples:
-                    n_attack = min(self.attack_samples - v.env_pos, frames)
-                    # Linear interpolation for attack
-                    attack_start = v.env_level
-                    attack_end = 1.0
-                    attack_duration = self.attack_samples - (v.env_pos - n_attack)
-                    
-                    env = []
-                    for i in range(frames):
-                        if i < n_attack:
-                            ratio = i / attack_duration if attack_duration > 0 else 1.0
-                            env.append(attack_start + (attack_end - attack_start) * ratio)
-                        else:
-                            env.append(1.0)
-                    
-                    v.env_pos += frames
-                    v.env_level = env[-1]
-                else:
-                    env = [1.0] * frames
-            else:
-                n_release = min(frames, max(self.release_samples - v.release_pos, 0))
-                env = []
-                release_start = v.env_level
-                release_duration = self.release_samples - (v.release_pos - n_release) if n_release > 0 else 1.0
-                
-                for i in range(frames):
-                    if i < n_release and release_duration > 0:
-                        ratio = i / release_duration
-                        env.append(release_start * (1.0 - ratio))
-                    else:
-                        env.append(0.0)
-                
-                v.release_pos += frames
-                v.env_level = env[n_release - 1] if n_release > 0 else 0.0
-                if v.release_pos >= self.release_samples:
-                    remove_list.append(degree)
-
-            # --- Sawtooth Synthesis ---
-            voice_buf = [0.0] * frames
-            
-            for osc_idx, f in enumerate(v.freqs):
-                delta = 2.0 * math.pi * f / self.sr
-                phase = v.phases[osc_idx]
-                
-                for n in range(frames):
-                    # Sawtooth formula: 2 * (phase / 2pi) - 1
-                    sample = 2.0 * (phase / (2.0 * math.pi)) - 1.0
-                    voice_buf[n] += v.weights[osc_idx] * sample * env[n]
-                    phase = (phase + delta) % (2.0 * math.pi)
-                
-                v.phases[osc_idx] = phase
-
-            # --- One-Pole Low-Pass Filter ---
-            filtered_voice = [0.0] * frames
-            last_y = v.lpf_state
-            for n in range(frames):
-                last_y = last_y + self.alpha * (voice_buf[n] - last_y)
-                filtered_voice[n] = last_y
-            v.lpf_state = last_y
-
-            # Add to output buffer
-            for n in range(frames):
-                out_buf[n] += filtered_voice[n]
-
-        for degree in remove_list:
-            del self.voices[degree]
-
-        # Scale and copy to SDL stream
         out_ptr = ctypes.cast(stream, ctypes.POINTER(ctypes.c_float))
-        for n in range(frames):
-            out_ptr[n] = out_buf[n] * MASTER_VOL
+        for n in range(length // 4):
+            level = sum(o.sample() for o in self.oscs.values())
+            out_ptr[n] = level * MASTER_VOL
+
+        pitches = list(self.oscs)
+        for pitch in pitches:
+            if self.oscs[pitch].env_state == ENV_OFF:
+                del self.oscs[pitch]
 
 
 SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO)
@@ -238,7 +236,7 @@ def hcenter(surf, y):
 
 synth = Synth()
 
-desired = SDL_AudioSpec(SR, AUDIO_F32SYS, 1, BLOCKSIZE)
+desired = SDL_AudioSpec(SAMPLE_RATE, AUDIO_F32SYS, 1, BLOCK_SIZE)
 callback_func = SDL_AudioCallback(synth.audio_callback)
 desired.callback = callback_func
 devid = SDL_OpenAudioDevice(None, 0, desired, None, 0)
@@ -256,8 +254,13 @@ fill_color = SDL_MapRGB(wsurf.contents.format, 0 if font else 255, 0, 0)
 text_color = SDL_Color(255, 255, 255, 255)
 
 event = SDL_Event()
-current_key = b"Key: C"
-last_chord = b" "
+key = -9  # steps from A4, start at C4
+mod = MOD_NONE
+degree = 0
+
+chord_text = b" "
+key_text = b"Key: C"
+
 running = True
 
 while running:
@@ -270,35 +273,47 @@ while running:
             op = KEY_MAP.get(event.key.keysym.scancode)
             if op is None:
                 continue
+
             if op[0] == OP_QUIT:
                 running = False
             if op[0] == OP_SHIFT:
-                key = synth.shift_key(op[1])
-                current_key = f"Key: {key}".encode()
+                key += op[1]
+                if degree > 0:
+                    synth.change_chord(key, degree, mod)
+                key_name = ROOT_NAMES[key % 12]
+                key_text = f"Key: {key_name}".encode()
             elif op[0] == OP_MOD:
-                synth.mod = op[1]
+                mod = op[1]
+                if degree > 0:
+                    synth.change_chord(key, degree, mod)
             elif op[0] == OP_PLAY:
-                voice = synth.note_on(op[1])
-                last_chord = voice.name.encode()
+                degree = op[1]
+                synth.change_chord(key, degree, mod)
+
+            chord_text = synth.chord_name.encode()
 
         elif event.type == SDL_KEYUP:
             op = KEY_MAP.get(event.key.keysym.scancode)
             if op is None:
                 continue
+
             if op[0] == OP_MOD:
-                synth.mod = MOD_NONE
+                mod = MOD_NONE
+                if degree > 0:
+                    synth.change_chord(key, degree, mod)
             elif op[0] == OP_PLAY:
-                synth.note_off(op[1])
+                synth.release()
+                degree = 0
 
     SDL_FillRect(wsurf, wrect, fill_color)
 
     if font:
-        tsurf = TTF_RenderText_Blended(font, last_chord, text_color)
+        tsurf = TTF_RenderText_Blended(font, chord_text, text_color)
         trect = hcenter(tsurf, 150)
         SDL_BlitSurface(tsurf, None, wsurf, trect)
         SDL_FreeSurface(tsurf)
 
-        tsurf = TTF_RenderText_Blended(small_font, current_key, text_color)
+        tsurf = TTF_RenderText_Blended(small_font, key_text, text_color)
         trect = hcenter(tsurf, 300)
         SDL_BlitSurface(tsurf, None, wsurf, trect)
         SDL_FreeSurface(tsurf)
