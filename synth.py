@@ -13,7 +13,7 @@ MASTER_VOL = 0.2
 
 ATTACK_TIME = 0.05
 DECAY_TIME = 0.05
-RELEASE_TIME = 0.1
+RELEASE_TIME = 0.5
 CUTOFF_HZ = 1200.0  # Low-pass filter cutoff
 
 OP_PLAY = 1
@@ -178,14 +178,12 @@ class Synth:
             if pitch not in pitches:
                 osc.release()
 
-        volume = 1.0
-        for pitch in pitches:
+        for n, pitch in enumerate(pitches):
             osc = self.oscs.get(pitch)
             if osc is None:
                 osc = Oscillator(pitch)
                 self.oscs[pitch] = osc
-            osc.attack(volume)
-            volume *= 0.6
+            osc.attack(0.8 ** (n + 1))
 
         chord_code = "+".join(str(i) for i in chord)
         self.chord_name = ROOT_NAMES[root % 12] + CHORD_NAMES[chord_code]
@@ -249,6 +247,7 @@ event = SDL_Event()
 key = -9  # steps from A4, start at C4
 mod = MOD_NONE
 degree = 0
+last_degree = 0
 
 chord_text = b" "
 key_text = b"Key: C"
@@ -268,7 +267,7 @@ while running:
 
             if op[0] == OP_QUIT:
                 running = False
-            if op[0] == OP_SHIFT:
+            elif op[0] == OP_SHIFT:
                 key += op[1]
                 if degree > 0:
                     synth.change_chord(key, degree, mod)
@@ -281,6 +280,7 @@ while running:
             elif op[0] == OP_PLAY:
                 degree = op[1]
                 synth.change_chord(key, degree, mod)
+                last_degree = degree
 
             chord_text = synth.chord_name.encode()
 
@@ -295,8 +295,9 @@ while running:
                     synth.change_chord(key, degree, mod)
                     chord_text = synth.chord_name.encode()
             elif op[0] == OP_PLAY:
-                synth.release()
                 degree = 0
+                if op[1] == last_degree:
+                    synth.release()
 
 
     SDL_FillRect(wsurf, wrect, fill_color)
