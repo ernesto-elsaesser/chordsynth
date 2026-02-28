@@ -7,7 +7,7 @@ from pysdl import *
 from pysdl.sdlttf import *
 
 
-SAMPLE_RATE = 48000
+SAMPLE_RATE = 16000
 BLOCK_SIZE = 512
 MASTER_VOL = 0.2
 
@@ -128,35 +128,37 @@ class Oscillator:
 
         self.env_state = ENV_RELEASE
 
-    def sample(self) -> float:
-    
-        # Sawtooth formula: 2 * (phase / 2pi) - 1
-        sample = 2.0 * (self.phase / TWOPI) - 1.0
-        self.phase = (self.phase + self.delta) % TWOPI
+    def add_frames(self, buffer: list[float]):
 
-        if self.env_state == ENV_ATTACK:
-            self.level += self.attack_delta
-            if self.level >= self.volume:
-                self.level = self.volume
-                self.env_state = ENV_SUSTAIN
+        for n in range(len(buffer)):
 
-        elif self.env_state == ENV_DECAY:
-            self.level -= self.decay_delta
-            if self.level <= self.volume:
-                self.level = self.volume
-                self.env_state = ENV_SUSTAIN
+            # Sawtooth formula: 2 * (phase / 2pi) - 1
+            sample = 2.0 * (self.phase / TWOPI) - 1.0
+            self.phase = (self.phase + self.delta) % TWOPI
 
-        elif self.env_state == ENV_RELEASE:
-            self.level -= self.release_delta
-            if self.level <= 0.0:
-                self.level = 0.0
-                self.env_state = ENV_OFF
+            if self.env_state == ENV_ATTACK:
+                self.level += self.attack_delta
+                if self.level >= self.volume:
+                    self.level = self.volume
+                    self.env_state = ENV_SUSTAIN
 
-        sample *= self.level
+            elif self.env_state == ENV_DECAY:
+                self.level -= self.decay_delta
+                if self.level <= self.volume:
+                    self.level = self.volume
+                    self.env_state = ENV_SUSTAIN
 
-        # Low-Pass One-Pole
-        self.lpf_state += (sample - self.lpf_state) * self.lpf_alpha
-        return self.lpf_state
+            elif self.env_state == ENV_RELEASE:
+                self.level -= self.release_delta
+                if self.level <= 0.0:
+                    self.level = 0.0
+                    self.env_state = ENV_OFF
+
+            sample *= self.level
+
+            # Low-Pass One-Pole
+            self.lpf_state += (sample - self.lpf_state) * self.lpf_alpha
+            buffer[n] += self.lpf_state
 
 
 class Synth:
@@ -193,15 +195,19 @@ class Synth:
 
     def audio_callback(self, userdata, stream, length):
 
-        out_ptr = ctypes.cast(stream, ctypes.POINTER(ctypes.c_float))
-        for n in range(length // 4):
-            level = sum(o.sample() for o in self.oscs.values())
-            out_ptr[n] = level * MASTER_VOL
+        count = length // 4
+        out_buf = [0.0] * count
 
-        pitches = list(self.oscs)
-        for pitch in pitches:
-            if self.oscs[pitch].env_state == ENV_OFF:
+        for pitch, osc in list(self.oscs.items()):
+            if osc.env_state == ENV_OFF:
                 del self.oscs[pitch]
+            else:
+                osc.add_frames(out_buf)
+
+        out_ptr = ctypes.cast(stream, ctypes.POINTER(ctypes.c_float))
+        for n in range(count):
+            out_ptr[n] = out_buf[n] * MASTER_VOL
+
 
 
 SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO)
