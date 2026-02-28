@@ -154,11 +154,9 @@ class Oscillator:
 
         sample *= self.level
 
-        return sample
-    
         # Low-Pass One-Pole
-        # self.lpf_state += (sample - self.lpf_state) * self.lpf_alpha
-        # return self.lpf_state
+        self.lpf_state += (sample - self.lpf_state) * self.lpf_alpha
+        return self.lpf_state
 
 
 class Synth:
