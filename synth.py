@@ -160,7 +160,7 @@ class Oscillator:
                 self.env_pos = 0
 
         elif self.env_state == ENV_RELEASE:
-            sample *= self.env_pos / self.release_samples
+            sample *= 1.0 - (self.env_pos / self.release_samples)
             self.env_pos += 1
             if self.env_pos > self.release_samples:
                 self.env_state = ENV_OFF
@@ -183,18 +183,21 @@ class Synth:
 
         root = key + SCALE[degree]
         chord = CHORDS[mod][degree]
-        intervals = [0] + chord
+        pitches = [root + i for i in (0, *chord)]
         
+        for pitch, osc in self.oscs.items():
+            if pitch not in pitches:
+                osc.release()
+
         volume = 1.0
-        for interval in intervals:
-            pitch = root + interval
+        for pitch in pitches:
             osc = self.oscs.get(pitch)
             if osc is None:
                 osc = Oscillator(pitch)
                 self.oscs[pitch] = osc
             osc.attack(volume)
             volume *= 0.6
-        
+
         chord_code = "+".join(str(i) for i in chord)
         self.chord_name = ROOT_NAMES[root % 12] + CHORD_NAMES[chord_code]
 
