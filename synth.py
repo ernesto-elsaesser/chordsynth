@@ -309,6 +309,7 @@ while running:
 
 SDL_CloseAudioDevice(devid)
 TTF_CloseFont(font)
+TTF_CloseFont(small_font)
 TTF_Quit()
 SDL_DestroyWindow(window)
 SDL_Quit()
