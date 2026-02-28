@@ -97,6 +97,11 @@ class Synth:
         # Filter coefficient alpha
         self.alpha = (2.0 * math.pi * CUTOFF_HZ / self.sr) / (2.0 * math.pi * CUTOFF_HZ / self.sr + 1.0)
 
+    def shift_key(self, delta: int) -> str:
+
+        self.key += delta
+        return ROOT_NAMES[self.key % 12]
+
     def note_on(self, degree: int) -> Voice:
         if degree in self.voices:
             return self.voices[degree]
@@ -229,19 +234,9 @@ SDL_UpdateWindowSurface(window)
 
 text_color = SDL_Color(255, 255, 255, 255)
 
-
-def show_text(text: str, x: int, y: int):
-    if not font:
-        return
-    tsurf = TTF_RenderText_Solid(font, text.encode(), text_color)
-    trect = SDL_Rect(x, y, tsurf.contents.w, tsurf.contents.h)
-    SDL_FillRect(wsurf, wrect, 0)
-    SDL_BlitSurface(tsurf, None, wsurf, trect)
-    SDL_FreeSurface(tsurf)
-    SDL_UpdateWindowSurface(window)
-
-
 event = SDL_Event()
+current_key = b"C"
+current_chord = None
 running = True
 
 while running:
@@ -255,13 +250,13 @@ while running:
             if sc in (SDL_SCANCODE_POWER, SDL_SCANCODE_ESCAPE):
                 running = False
             elif sc == SDL_SCANCODE_L: # L1
-                synth.key -= 12
+                current_key = synth.shift_key(-12)
             elif sc == SDL_SCANCODE_R: # R1
-                synth.key += 12
+                current_key = synth.shift_key(12)
             elif sc == SDL_SCANCODE_M: # L2
-                synth.key -= 1
+                current_key = synth.shift_key(1)
             elif sc == SDL_SCANCODE_S: # R2
-                synth.key += 1
+                current_key = synth.shift_key(1)
             elif sc == SDL_SCANCODE_UP:
                 synth.mod = "m"  # switch between major and minor
             elif sc == SDL_SCANCODE_DOWN:
@@ -272,11 +267,9 @@ while running:
                 synth.mod = "7"
             else:
                 degree = SCANCODE_TO_DEGREE.get(sc)
-                if degree is None:
-                    show_text("SC " + str(sc), 100, 100)
-                else:
+                if degree is not None:
                     voice = synth.note_on(degree)
-                    show_text(voice.name, 100, 100)
+                    current_chord = voice.name.encode()
 
         elif event.type == SDL_KEYUP:
             sc = event.key.keysym.scancode
@@ -286,6 +279,21 @@ while running:
                 degree = SCANCODE_TO_DEGREE.get(sc)
                 if degree is not None:
                     synth.note_off(degree)
+
+    if font:
+        SDL_FillRect(wsurf, wrect, 0)
+        tsurf = TTF_RenderText_Solid(font, text.encode(), text_color)
+
+        tw = tsurf.contents.w
+        th = tsurf.contents.h
+        rx = (ww * wp) - (tw * align)
+        ry = (wh * hp) - (th * 0.5)
+        rect = SDL_Rect(int(rx), int(ry), tw, th)
+
+        trect = SDL_Rect(x, y, tsurf.contents.w, tsurf.contents.h)
+        SDL_BlitSurface(tsurf, None, wsurf, trect)
+        SDL_FreeSurface(tsurf)
+        SDL_UpdateWindowSurface(window)
 
     SDL_Delay(10)
 
