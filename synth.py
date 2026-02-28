@@ -16,32 +16,56 @@ ATTACK = 0.02
 RELEASE = 0.05
 CUTOFF_HZ = 1200.0  # Low-pass filter cutoff
 
+OP_PLAY = 1
+OP_MOD = 2
+OP_SHIFT = 3
+OP_QUIT = 4
 
-SCANCODE_TO_DEGREE = {
-    SDL_SCANCODE_1: 1,
-    SDL_SCANCODE_2: 2,
-    SDL_SCANCODE_3: 3,
-    SDL_SCANCODE_4: 4,
-    SDL_SCANCODE_5: 5,
-    SDL_SCANCODE_6: 6,
-    SDL_SCANCODE_7: 7,
-    SDL_SCANCODE_SPACE: 1,  # SELECT
-    SDL_SCANCODE_RETURN: 2,  # START
-    SDL_SCANCODE_B: 3,
-    SDL_SCANCODE_Y: 4,
-    SDL_SCANCODE_X: 5,
-    SDL_SCANCODE_A: 6,
-    SDL_SCANCODE_H: 7,
+MOD_NONE = 0
+MOD_MIN_MAJ = 1
+MOD_5 = 2
+MOD_7 = 3
+MOD_SUS4 = 4
+
+KEY_MAP = {
+    SDL_SCANCODE_POWER: (OP_QUIT, ),
+    SDL_SCANCODE_ESCAPE: (OP_QUIT, ),
+
+    SDL_SCANCODE_L: (OP_SHIFT, -12), # L1
+    SDL_SCANCODE_R: (OP_SHIFT, 12), # R1
+    SDL_SCANCODE_M: (OP_SHIFT, -1), # L2
+    SDL_SCANCODE_S: (OP_SHIFT, 1), # R2
+
+    SDL_SCANCODE_UP: (OP_MOD, MOD_MIN_MAJ),
+    SDL_SCANCODE_DOWN: (OP_MOD, MOD_SUS4),
+    SDL_SCANCODE_LEFT: (OP_MOD, MOD_5),
+    SDL_SCANCODE_RIGHT: (OP_MOD, MOD_7),
+
+    SDL_SCANCODE_1: (OP_PLAY, 1),
+    SDL_SCANCODE_2: (OP_PLAY, 2),
+    SDL_SCANCODE_3: (OP_PLAY, 3),
+    SDL_SCANCODE_4: (OP_PLAY, 4),
+    SDL_SCANCODE_5: (OP_PLAY, 5),
+    SDL_SCANCODE_6: (OP_PLAY, 6),
+    SDL_SCANCODE_7: (OP_PLAY, 7),
+
+    SDL_SCANCODE_SPACE: (OP_PLAY, 1),  # SELECT
+    SDL_SCANCODE_RETURN: (OP_PLAY, 2),  # START
+    SDL_SCANCODE_B: (OP_PLAY, 3),
+    SDL_SCANCODE_Y: (OP_PLAY, 4),
+    SDL_SCANCODE_X: (OP_PLAY, 5),
+    SDL_SCANCODE_A: (OP_PLAY, 6),
+    SDL_SCANCODE_H: (OP_PLAY, 7),
 }
 
 SCALE = [None, 0, 2, 4, 5, 7, 9, 11]  # major scale
 
 CHORDS = {
-    "": [[], [4, 7], [3, 7], [3, 7], [4, 7], [4, 7], [3, 7], [3, 6]],
-    "m": [[], [3, 7], [4, 7], [4, 7], [3, 7], [3, 7], [4, 7], [4, 7]],
-    "5": [[], [7], [7], [7], [7], [7], [7], [7]],
-    "7": [[], [4, 7, 11], [3, 7, 11], [3, 7, 11], [4, 7, 11], [4, 7, 11], [3, 7, 11], [3, 6, 11]],
-    "sus4": [[], [5, 7], [5, 7], [5, 7], [5, 7], [5, 7], [5, 7], [5, 7]],
+    MOD_NONE: [[], [4, 7], [3, 7], [3, 7], [4, 7], [4, 7], [3, 7], [3, 6]],
+    MOD_MIN_MAJ: [[], [3, 7], [4, 7], [4, 7], [3, 7], [3, 7], [4, 7], [4, 7]],
+    MOD_5: [[], [7], [7], [7], [7], [7], [7], [7]],
+    MOD_7: [[], [4, 7, 11], [3, 7, 11], [3, 7, 11], [4, 7, 11], [4, 7, 11], [3, 7, 11], [3, 6, 11]],
+    MOD_SUS4: [[], [5, 7], [5, 7], [5, 7], [5, 7], [5, 7], [5, 7], [5, 7]],
 }
 
 ROOT_NAMES = ["A", "A#", "B", "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#"]
@@ -57,14 +81,10 @@ CHORD_NAMES = {
 }
 
 FONT_PATHS = [
-    "DejaVuSans.ttf",
-    "/usr/share/fonts/dejavu/DejaVuSans.ttf",
-    "/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf",
+    b"DejaVuSans.ttf",
+    b"/usr/share/fonts/dejavu/DejaVuSans.ttf",
+    b"/usr/share/fonts/dejavu-sans-fonts/DejaVuSans.ttf",
 ]
-
-STATE_ON = 2
-STATE_RELEASE = 1
-STATE_OFF = 2
 
 
 class Voice:
@@ -77,7 +97,7 @@ class Voice:
         self.freqs = [440.0 * 2 ** ((root + o) / 12.0) for o in offsets]
         self.weights = [1.0] * len(offsets)
         self.phases = [0.0] * len(offsets)
-        self.state = STATE_ON
+        self.pressed = True
         self.env_pos = 0
         self.env_level = 0.0
         self.release_pos = 0
@@ -92,13 +112,12 @@ class Synth:
         self.release_samples = int(RELEASE * self.sr)
 
         self.key = -9  # steps from A4, start at C4
-        self.mod = ""
+        self.mod = MOD_NONE
 
         # Filter coefficient alpha
         self.alpha = (2.0 * math.pi * CUTOFF_HZ / self.sr) / (2.0 * math.pi * CUTOFF_HZ / self.sr + 1.0)
 
     def shift_key(self, delta: int) -> str:
-
         self.key += delta
         return ROOT_NAMES[self.key % 12]
 
@@ -113,9 +132,8 @@ class Synth:
 
     def note_off(self, degree: int):
         v = self.voices.get(degree)
-        if v and v.state == STATE_ON:
-            v.state = STATE_RELEASE
-            v.release_pos = 0
+        if v and v.pressed:
+            v.pressed = False
 
     def audio_callback(self, userdata, stream, length):
         frames = length // 4
@@ -126,7 +144,7 @@ class Synth:
 
         for degree, v in self.voices.items():
             # --- Envelope Logic ---
-            if v.state == STATE_ON:
+            if v.pressed:
                 if v.env_pos < self.attack_samples:
                     n_attack = min(self.attack_samples - v.env_pos, frames)
                     # Linear interpolation for attack
@@ -210,7 +228,13 @@ ww = wsurf.contents.w
 wh = wsurf.contents.h
 wrect = SDL_Rect(0, 0, ww, wh)
 
-# renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC)
+
+def hcenter(surf, y):
+    w = surf.contents.w
+    h = surf.contents.h
+    x = (ww // 2) - (w // 2)
+    return SDL_Rect(x ,y, w, h)
+
 
 synth = Synth()
 
@@ -221,22 +245,19 @@ devid = SDL_OpenAudioDevice(None, 0, desired, None, 0)
 SDL_PauseAudioDevice(devid, 0)
 
 font = 0
+small_font = 0
 for path in FONT_PATHS:
-    font = TTF_OpenFont(path.encode(), 64)
+    font = TTF_OpenFont(path, 80)
     if font:
+        small_font = TTF_OpenFont(path, 40)
         break
 
-fill_color = 0
-if not font:
-    fill_color = SDL_Color(255, 0, 0, 255)
-SDL_FillRect(wsurf, wrect, fill_color)
-SDL_UpdateWindowSurface(window)
-
+fill_color = SDL_MapRGB(wsurf.contents.format, 0 if font else 255, 0, 0)
 text_color = SDL_Color(255, 255, 255, 255)
 
 event = SDL_Event()
-current_key = b"C"
-current_chord = None
+current_key = b"Key: C"
+last_chord = b" "
 running = True
 
 while running:
@@ -246,54 +267,43 @@ while running:
             running = False
 
         elif event.type == SDL_KEYDOWN:
-            sc = event.key.keysym.scancode
-            if sc in (SDL_SCANCODE_POWER, SDL_SCANCODE_ESCAPE):
+            op = KEY_MAP.get(event.key.keysym.scancode)
+            if op is None:
+                continue
+            if op[0] == OP_QUIT:
                 running = False
-            elif sc == SDL_SCANCODE_L: # L1
-                current_key = synth.shift_key(-12)
-            elif sc == SDL_SCANCODE_R: # R1
-                current_key = synth.shift_key(12)
-            elif sc == SDL_SCANCODE_M: # L2
-                current_key = synth.shift_key(1)
-            elif sc == SDL_SCANCODE_S: # R2
-                current_key = synth.shift_key(1)
-            elif sc == SDL_SCANCODE_UP:
-                synth.mod = "m"  # switch between major and minor
-            elif sc == SDL_SCANCODE_DOWN:
-                synth.mod = "sus4"
-            elif sc == SDL_SCANCODE_LEFT:
-                synth.mod = "5"
-            elif sc == SDL_SCANCODE_RIGHT:
-                synth.mod = "7"
-            else:
-                degree = SCANCODE_TO_DEGREE.get(sc)
-                if degree is not None:
-                    voice = synth.note_on(degree)
-                    current_chord = voice.name.encode()
+            if op[0] == OP_SHIFT:
+                key = synth.shift_key(op[1])
+                current_key = f"Key: {key}".encode()
+            elif op[0] == OP_MOD:
+                synth.mod = op[1]
+            elif op[0] == OP_PLAY:
+                voice = synth.note_on(op[1])
+                last_chord = voice.name.encode()
 
         elif event.type == SDL_KEYUP:
-            sc = event.key.keysym.scancode
-            if sc in {SDL_SCANCODE_UP, SDL_SCANCODE_DOWN, SDL_SCANCODE_LEFT, SDL_SCANCODE_RIGHT}:
-                synth.mod = ""
-            else:
-                degree = SCANCODE_TO_DEGREE.get(sc)
-                if degree is not None:
-                    synth.note_off(degree)
+            op = KEY_MAP.get(event.key.keysym.scancode)
+            if op is None:
+                continue
+            if op[0] == OP_MOD:
+                synth.mod = MOD_NONE
+            elif op[0] == OP_PLAY:
+                synth.note_off(op[1])
+
+    SDL_FillRect(wsurf, wrect, fill_color)
 
     if font:
-        SDL_FillRect(wsurf, wrect, 0)
-        tsurf = TTF_RenderText_Solid(font, text.encode(), text_color)
-
-        tw = tsurf.contents.w
-        th = tsurf.contents.h
-        rx = (ww * wp) - (tw * align)
-        ry = (wh * hp) - (th * 0.5)
-        rect = SDL_Rect(int(rx), int(ry), tw, th)
-
-        trect = SDL_Rect(x, y, tsurf.contents.w, tsurf.contents.h)
+        tsurf = TTF_RenderText_Blended(font, last_chord, text_color)
+        trect = hcenter(tsurf, 150)
         SDL_BlitSurface(tsurf, None, wsurf, trect)
         SDL_FreeSurface(tsurf)
-        SDL_UpdateWindowSurface(window)
+
+        tsurf = TTF_RenderText_Blended(small_font, current_key, text_color)
+        trect = hcenter(tsurf, 300)
+        SDL_BlitSurface(tsurf, None, wsurf, trect)
+        SDL_FreeSurface(tsurf)
+
+    SDL_UpdateWindowSurface(window)
 
     SDL_Delay(10)
 
