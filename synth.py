@@ -6,14 +6,14 @@ import ctypes
 from pysdl import *
 from pysdl.sdlttf import *
 
-# TODO: chord variation live
 
-SAMPLE_RATE = 16000
+SAMPLE_RATE = 48000
 BLOCK_SIZE = 512
 MASTER_VOL = 0.2
 
-ATTACK_TIME = 0.02
-RELEASE_TIME = 0.05
+ATTACK_TIME = 0.05
+DECAY_TIME = 0.05
+RELEASE_TIME = 0.1
 CUTOFF_HZ = 1200.0  # Low-pass filter cutoff
 
 OP_PLAY = 1
@@ -88,8 +88,9 @@ FONT_PATHS = [
 
 ENV_OFF = 0
 ENV_ATTACK = 1
-ENV_SUSTAIN = 2
-ENV_RELEASE = 3
+ENV_DECAY = 2
+ENV_SUSTAIN = 3
+ENV_RELEASE = 4
 
 TWOPI = 2.0 * math.pi
 
@@ -104,11 +105,13 @@ class Oscillator:
         self.phase = 0.0
 
         self.env_state = ENV_OFF
-        self.env_pos = 0
+        self.level = 0.0
+
         self.lpf_state = 0.0  # Memory for the one-pole filter
 
-        self.attack_samples = int(ATTACK_TIME * SAMPLE_RATE)
-        self.release_samples = int(RELEASE_TIME * SAMPLE_RATE)
+        self.attack_delta = 1 / (ATTACK_TIME * SAMPLE_RATE)
+        self.decay_delta = 1 / (DECAY_TIME * SAMPLE_RATE)
+        self.release_delta = 1 / (RELEASE_TIME * SAMPLE_RATE)
 
         # Filter coefficient alpha
         self.lpf_alpha = (TWOPI * CUTOFF_HZ / SAMPLE_RATE) / (TWOPI * CUTOFF_HZ / SAMPLE_RATE + 1.0)
@@ -116,54 +119,40 @@ class Oscillator:
     def attack(self, volume):
 
         self.volume = volume
-
-        if self.env_state == ENV_OFF:
+        if self.level > volume:
+            self.env_state = ENV_DECAY
+        else:
             self.env_state = ENV_ATTACK
-            self.env_pos = 0
-        elif self.env_state == ENV_RELEASE:
-            self.env_state = ENV_ATTACK
-            # increase again from current level
-            level = self.env_pos / self.release_samples
-            self.env_pos = int(level * self.attack_samples)
-
-        # no changes if in ATTACK or SUSTAIN already
 
     def release(self):
-                
-        if self.env_state == ENV_ATTACK:
-            self.env_state = ENV_RELEASE
-            # decrease again from current level
-            level = self.env_pos / self.attack_samples
-            self.env_pos = int(level * self.release_samples)
-        elif self.env_state == ENV_SUSTAIN:
-            self.env_state = ENV_RELEASE
-            self.env_pos = 0
 
-        # no changes if in RELEASE or OFF already
+        self.env_state = ENV_RELEASE
 
     def sample(self) -> float:
-
-        if self.env_state == ENV_OFF:
-            return 0.0
     
         # Sawtooth formula: 2 * (phase / 2pi) - 1
         sample = 2.0 * (self.phase / TWOPI) - 1.0
         self.phase = (self.phase + self.delta) % TWOPI
 
-        sample *= self.volume
-
         if self.env_state == ENV_ATTACK:
-            sample *= self.env_pos / self.attack_samples
-            self.env_pos += 1
-            if self.env_pos > self.attack_samples:
+            self.level += self.attack_delta
+            if self.level >= self.volume:
+                self.level = self.volume
                 self.env_state = ENV_SUSTAIN
-                self.env_pos = 0
+
+        elif self.env_state == ENV_DECAY:
+            self.level -= self.decay_delta
+            if self.level <= self.volume:
+                self.level = self.volume
+                self.env_state = ENV_SUSTAIN
 
         elif self.env_state == ENV_RELEASE:
-            sample *= 1.0 - (self.env_pos / self.release_samples)
-            self.env_pos += 1
-            if self.env_pos > self.release_samples:
+            self.level -= self.release_delta
+            if self.level <= 0.0:
+                self.level = 0.0
                 self.env_state = ENV_OFF
+
+        sample *= self.level
 
         return sample
     
@@ -304,9 +293,11 @@ while running:
                 mod = MOD_NONE
                 if degree > 0:
                     synth.change_chord(key, degree, mod)
+                    chord_text = synth.chord_name.encode()
             elif op[0] == OP_PLAY:
                 synth.release()
                 degree = 0
+
 
     SDL_FillRect(wsurf, wrect, fill_color)
 
