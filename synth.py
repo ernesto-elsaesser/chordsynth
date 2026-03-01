@@ -14,7 +14,7 @@ MASTER_VOL = 0.2
 ATTACK_TIME = 0.05
 DECAY_TIME = 0.05
 RELEASE_TIME = 0.5
-LPF_CUTOFF = 1200.0  # Low-pass filter cutoff in Hertz
+LPF_CUTOFF = 2000  # Low-pass filter cutoff in Hertz
 
 OP_PLAY = 1
 OP_MOD = 2
