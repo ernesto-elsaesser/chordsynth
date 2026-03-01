@@ -14,7 +14,9 @@ MASTER_VOL = 0.2
 ATTACK_TIME = 0.05
 DECAY_TIME = 0.05
 RELEASE_TIME = 0.5
-LPF_CUTOFF = 2000  # Low-pass filter cutoff in Hertz
+LPF_CUTOFF = 2000  # Low-pass filter cutoff in Hz
+LFO_FREQUENCY = 5  # Hz
+LFO_DEPTH = 0.015
 
 OP_PLAY = 1
 OP_MOD = 2
@@ -100,7 +102,7 @@ class Oscillator:
     def __init__(self, pitch: int):
 
         frequency = 440.0 * 2 ** (pitch / 12)
-        self.delta = TWOPI * frequency / SAMPLE_RATE
+        self.base_delta = TWOPI * frequency / SAMPLE_RATE
         self.volume = 0.0
         self.phase = 0.0
 
@@ -110,6 +112,9 @@ class Oscillator:
         self.attack_delta = 1 / (ATTACK_TIME * SAMPLE_RATE)
         self.decay_delta = 1 / (DECAY_TIME * SAMPLE_RATE)
         self.release_delta = 1 / (RELEASE_TIME * SAMPLE_RATE)
+
+        self.lfo_phase = 0.0
+        self.lfo_delta = TWOPI * LFO_FREQUENCY / SAMPLE_RATE
 
     def attack(self, volume):
 
@@ -127,9 +132,14 @@ class Oscillator:
 
         for n in range(len(buffer)):
 
+            # Apply LFO modulation to oscillator frequency
+            lfo_sample = math.sin(self.lfo_phase)
+            modulated_delta = self.base_delta * (1.0 + LFO_DEPTH * lfo_sample)
+            self.lfo_phase = (self.lfo_phase + self.lfo_delta) % TWOPI
+
             # Sawtooth formula: 2 * (phase / 2pi) - 1
             sample = 2.0 * (self.phase / TWOPI) - 1.0
-            self.phase = (self.phase + self.delta) % TWOPI
+            self.phase = (self.phase + modulated_delta) % TWOPI
 
             if self.env_state == ENV_ATTACK:
                 self.level += self.attack_delta
