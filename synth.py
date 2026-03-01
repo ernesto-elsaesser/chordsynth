@@ -275,7 +275,7 @@ degree = 0
 last_degree = 0
 
 chord_text = b" "
-key_text = b"Key: C"
+key_text = b"Key: C4"
 
 running = True
 
@@ -294,10 +294,11 @@ while running:
                 running = False
             elif op[0] == OP_SHIFT:
                 key += op[1]
+                key_name = ROOT_NAMES[key % 12]
+                key_oct = 5 + (key // 12)
+                key_text = f"Key: {key_name}{key_oct}".encode()
                 if degree > 0:
                     synth.change_chord(key, degree, mod)
-                key_name = ROOT_NAMES[key % 12]
-                key_text = f"Key: {key_name}".encode()
             elif op[0] == OP_MOD:
                 mod = op[1]
                 if degree > 0:
