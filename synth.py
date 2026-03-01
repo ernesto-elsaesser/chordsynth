@@ -13,8 +13,9 @@ MASTER_VOL = 0.2
 
 # frequency detune, LFO frequency, LFO depth
 UNISON = [
-    (1.003, 0.5, 0.003),
-    (0.997, 0.5, 0.003),
+    (1.01, 5.2, 0.001),
+    # (1.0, 5, 0.001),
+    (0.99, 5.4, 0.001),
 ]
 
 ATTACK_TIME = 0.05
@@ -248,7 +249,7 @@ def hcenter(surf, y):
     return SDL_Rect(x ,y, w, h)
 
 
-synth = Synth(LPF_CUTOFF)
+synth = Synth()
 
 desired = SDL_AudioSpec(SAMPLE_RATE, AUDIO_F32SYS, 1, BLOCK_SIZE)
 callback_func = SDL_AudioCallback(synth.audio_callback)
