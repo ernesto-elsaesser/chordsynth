@@ -14,7 +14,7 @@ MASTER_VOL = 0.2
 ATTACK_TIME = 0.05
 DECAY_TIME = 0.05
 RELEASE_TIME = 0.5
-CUTOFF_HZ = 1200.0  # Low-pass filter cutoff
+LPF_CUTOFF = 1200.0  # Low-pass filter cutoff in Hertz
 
 OP_PLAY = 1
 OP_MOD = 2
@@ -107,14 +107,9 @@ class Oscillator:
         self.env_state = ENV_OFF
         self.level = 0.0
 
-        self.lpf_state = 0.0  # Memory for the one-pole filter
-
         self.attack_delta = 1 / (ATTACK_TIME * SAMPLE_RATE)
         self.decay_delta = 1 / (DECAY_TIME * SAMPLE_RATE)
         self.release_delta = 1 / (RELEASE_TIME * SAMPLE_RATE)
-
-        # Filter coefficient alpha
-        self.lpf_alpha = (TWOPI * CUTOFF_HZ / SAMPLE_RATE) / (TWOPI * CUTOFF_HZ / SAMPLE_RATE + 1.0)
 
     def attack(self, volume):
 
@@ -154,16 +149,15 @@ class Oscillator:
                     self.level = 0.0
                     self.env_state = ENV_OFF
 
-            sample *= self.level
-
-            # Low-Pass One-Pole
-            self.lpf_state += (sample - self.lpf_state) * self.lpf_alpha
-            buffer[n] += self.lpf_state
+            buffer[n] += sample * self.level
 
 
 class Synth:
 
-    def __init__(self):
+    def __init__(self, lpf_cutoff: float):
+
+        self.lpf_alpha = (TWOPI * lpf_cutoff / SAMPLE_RATE) / (TWOPI * lpf_cutoff / SAMPLE_RATE + 1.0)
+        self.lpf_state = 0.0
 
         self.chord_name = "-"
         self.oscs: dict[int, Oscillator] = {}
@@ -206,8 +200,9 @@ class Synth:
 
         out_ptr = ctypes.cast(stream, ctypes.POINTER(ctypes.c_float))
         for n in range(count):
-            out_ptr[n] = out_buf[n] * MASTER_VOL
-
+            # Low-Pass One-Pole
+            self.lpf_state += (out_buf[n] - self.lpf_state) * self.lpf_alpha
+            out_ptr[n] = self.lpf_state * MASTER_VOL
 
 
 SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO)
@@ -228,7 +223,7 @@ def hcenter(surf, y):
     return SDL_Rect(x ,y, w, h)
 
 
-synth = Synth()
+synth = Synth(LPF_CUTOFF)
 
 desired = SDL_AudioSpec(SAMPLE_RATE, AUDIO_F32SYS, 1, BLOCK_SIZE)
 callback_func = SDL_AudioCallback(synth.audio_callback)
