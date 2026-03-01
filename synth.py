@@ -11,12 +11,16 @@ SAMPLE_RATE = 16000
 BLOCK_SIZE = 512
 MASTER_VOL = 0.2
 
+# frequency detune, LFO frequency, LFO depth
+UNISON = [
+    (1.003, 0.5, 0.003),
+    (0.997, 0.5, 0.003),
+]
+
 ATTACK_TIME = 0.05
 DECAY_TIME = 0.05
 RELEASE_TIME = 0.5
-LPF_CUTOFF = 2000  # Low-pass filter cutoff in Hz
-LFO_FREQUENCY = 5  # Hz
-LFO_DEPTH = 0.015
+LPF_ALPHA = 0.3  # ~ 1200 Hz
 
 OP_PLAY = 1
 OP_MOD = 2
@@ -97,80 +101,92 @@ ENV_RELEASE = 4
 TWOPI = 2.0 * math.pi
 
 
-class Oscillator:
+class SawtoothOscillator:
+
+    def __init__(self, frequency: float, lfo_frequency: float, lfo_depth: float):
+
+        self.phase = 0.0
+        self.phase_delta = TWOPI * frequency / SAMPLE_RATE
+
+        self.lfo_phase = 0.0
+        self.lfo_delta = TWOPI * lfo_frequency / SAMPLE_RATE
+        self.lfo_depth = lfo_depth
+
+    def sample(self) -> float:
+
+        lfo_sample = math.sin(self.lfo_phase)
+        self.lfo_phase = (self.lfo_phase + self.lfo_delta) % TWOPI
+
+        sample = 2.0 * (self.phase / TWOPI) - 1.0
+        mod_delta = self.phase_delta * (1.0 + self.lfo_depth * lfo_sample)
+        self.phase = (self.phase + mod_delta) % TWOPI
+
+        return sample
+
+
+class ADSREnvelope:
 
     def __init__(self, pitch: int):
 
         frequency = 440.0 * 2 ** (pitch / 12)
-        self.base_delta = TWOPI * frequency / SAMPLE_RATE
-        self.volume = 0.0
-        self.phase = 0.0
+        self.oscs = [SawtoothOscillator(frequency * fd, lf, ld)
+                     for fd, lf, ld in UNISON]
 
-        self.env_state = ENV_OFF
+        self.state = ENV_OFF
+        self.sustain_volume = 0.0
         self.level = 0.0
 
         self.attack_delta = 1 / (ATTACK_TIME * SAMPLE_RATE)
         self.decay_delta = 1 / (DECAY_TIME * SAMPLE_RATE)
         self.release_delta = 1 / (RELEASE_TIME * SAMPLE_RATE)
 
-        self.lfo_phase = 0.0
-        self.lfo_delta = TWOPI * LFO_FREQUENCY / SAMPLE_RATE
-
     def attack(self, volume):
 
-        self.volume = volume
+        self.sustain_volume = volume
         if self.level > volume:
-            self.env_state = ENV_DECAY
+            self.state = ENV_DECAY
         else:
-            self.env_state = ENV_ATTACK
+            self.state = ENV_ATTACK
 
     def release(self):
 
-        self.env_state = ENV_RELEASE
+        self.state = ENV_RELEASE
 
     def add_frames(self, buffer: list[float]):
 
         for n in range(len(buffer)):
 
-            # Apply LFO modulation to oscillator frequency
-            lfo_sample = math.sin(self.lfo_phase)
-            modulated_delta = self.base_delta * (1.0 + LFO_DEPTH * lfo_sample)
-            self.lfo_phase = (self.lfo_phase + self.lfo_delta) % TWOPI
+            for osc in self.oscs:
+                buffer[n] += osc.sample()
 
-            # Sawtooth formula: 2 * (phase / 2pi) - 1
-            sample = 2.0 * (self.phase / TWOPI) - 1.0
-            self.phase = (self.phase + modulated_delta) % TWOPI
-
-            if self.env_state == ENV_ATTACK:
+            if self.state == ENV_ATTACK:
                 self.level += self.attack_delta
-                if self.level >= self.volume:
-                    self.level = self.volume
-                    self.env_state = ENV_SUSTAIN
+                if self.level >= self.sustain_volume:
+                    self.level = self.sustain_volume
+                    self.state = ENV_SUSTAIN
 
-            elif self.env_state == ENV_DECAY:
+            elif self.state == ENV_DECAY:
                 self.level -= self.decay_delta
-                if self.level <= self.volume:
-                    self.level = self.volume
-                    self.env_state = ENV_SUSTAIN
+                if self.level <= self.sustain_volume:
+                    self.level = self.sustain_volume
+                    self.state = ENV_SUSTAIN
 
-            elif self.env_state == ENV_RELEASE:
+            elif self.state == ENV_RELEASE:
                 self.level -= self.release_delta
                 if self.level <= 0.0:
                     self.level = 0.0
-                    self.env_state = ENV_OFF
+                    self.state = ENV_OFF
 
-            buffer[n] += sample * self.level
+            buffer[n] *= self.level / len(self.oscs)
 
 
 class Synth:
 
-    def __init__(self, lpf_cutoff: float):
+    def __init__(self):
 
-        self.lpf_alpha = (TWOPI * lpf_cutoff / SAMPLE_RATE) / (TWOPI * lpf_cutoff / SAMPLE_RATE + 1.0)
         self.lpf_state = 0.0
-
         self.chord_name = "-"
-        self.oscs: dict[int, Oscillator] = {}
+        self.envelopes: dict[int, ADSREnvelope] = {}
 
     def change_chord(self, key: int, degree: int, mod: int):
 
@@ -178,40 +194,39 @@ class Synth:
         chord = CHORDS[mod][degree]
         pitches = [root + i for i in (0, *chord)]
         
-        for pitch, osc in self.oscs.items():
+        for pitch, env in self.envelopes.items():
             if pitch not in pitches:
-                osc.release()
+                env.release()
 
         for n, pitch in enumerate(pitches):
-            osc = self.oscs.get(pitch)
-            if osc is None:
-                osc = Oscillator(pitch)
-                self.oscs[pitch] = osc
-            osc.attack(0.8 ** (n + 1))
+            env = self.envelopes.get(pitch)
+            if env is None:
+                env = ADSREnvelope(pitch)
+                self.envelopes[pitch] = env
+            env.attack(0.8 ** (n + 1))
 
         chord_code = "+".join(str(i) for i in chord)
         self.chord_name = ROOT_NAMES[root % 12] + CHORD_NAMES[chord_code]
 
     def release(self):
 
-        for osc in self.oscs.values():
-            osc.release()
+        for env in self.envelopes.values():
+            env.release()
 
     def audio_callback(self, userdata, stream, length):
 
         count = length // 4
         out_buf = [0.0] * count
 
-        for pitch, osc in list(self.oscs.items()):
-            if osc.env_state == ENV_OFF:
-                del self.oscs[pitch]
+        for pitch, env in list(self.envelopes.items()):
+            if env.state == ENV_OFF:
+                del self.envelopes[pitch]
             else:
-                osc.add_frames(out_buf)
+                env.add_frames(out_buf)
 
         out_ptr = ctypes.cast(stream, ctypes.POINTER(ctypes.c_float))
         for n in range(count):
-            # Low-Pass One-Pole
-            self.lpf_state += (out_buf[n] - self.lpf_state) * self.lpf_alpha
+            self.lpf_state += (out_buf[n] - self.lpf_state) * LPF_ALPHA
             out_ptr[n] = self.lpf_state * MASTER_VOL
 
 
