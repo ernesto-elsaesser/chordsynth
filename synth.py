@@ -7,6 +7,10 @@ from pysdl import *
 from pysdl.sdlttf import *
 
 
+# TODO: convert to C again
+# TODO: display active pitches?
+
+
 SAMPLE_RATE = 16000
 BLOCK_SIZE = 256
 MASTER_VOL = 0.2
@@ -23,7 +27,7 @@ LFO_UPDATE_INTERVAL = 16
 ATTACK_TIME = 0.05
 DECAY_TIME = 0.05
 RELEASE_TIME = 0.5
-LPF_ALPHA = 0.3  # ~ 1200 Hz
+LPF_ALPHA = 0.3  # ~1200 Hz
 
 OP_PLAY = 1
 OP_MOD = 2
@@ -251,6 +255,7 @@ class Synth:
             lpf_state += (out_ptr[n] - lpf_state) * LPF_ALPHA
             out_ptr[n] = lpf_state * MASTER_VOL
         self.lpf_state = lpf_state
+
 
 SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO)
 TTF_Init()
