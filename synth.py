@@ -137,10 +137,6 @@ class ADSREnvelope:
         self.sustain_volume = 0.0
         self.level = 0.0
 
-        self.attack_delta = 1 / (ATTACK_TIME * SAMPLE_RATE)
-        self.decay_delta = 1 / (DECAY_TIME * SAMPLE_RATE)
-        self.release_delta = 1 / (RELEASE_TIME * SAMPLE_RATE)
-
     def attack(self, volume):
 
         self.sustain_volume = volume
@@ -153,32 +149,50 @@ class ADSREnvelope:
 
         self.state = ENV_RELEASE
 
-    def add_frames(self, buffer: list[float]):
+    def add_frames(self, buffer, count: int) -> bool:
 
-        for n in range(len(buffer)):
+        oscs = self.oscs
+        sustain_volume = self.sustain_volume
 
-            for osc in self.oscs:
-                buffer[n] += osc.sample()
+        attack_delta = 1 / (ATTACK_TIME * SAMPLE_RATE)
+        decay_delta = 1 / (DECAY_TIME * SAMPLE_RATE)
+        release_delta = 1 / (RELEASE_TIME * SAMPLE_RATE)
+        norm_factor = 1  / len(self.oscs)
 
-            if self.state == ENV_ATTACK:
-                self.level += self.attack_delta
-                if self.level >= self.sustain_volume:
-                    self.level = self.sustain_volume
-                    self.state = ENV_SUSTAIN
+        state = self.state
+        level = self.level
 
-            elif self.state == ENV_DECAY:
-                self.level -= self.decay_delta
-                if self.level <= self.sustain_volume:
-                    self.level = self.sustain_volume
-                    self.state = ENV_SUSTAIN
+        for n in range(count):
 
-            elif self.state == ENV_RELEASE:
-                self.level -= self.release_delta
-                if self.level <= 0.0:
+            if state == ENV_ATTACK:
+                level += attack_delta
+                if level >= sustain_volume:
+                    level = sustain_volume
+                    state = ENV_SUSTAIN
+
+            elif state == ENV_DECAY:
+                level -= decay_delta
+                if level <= sustain_volume:
+                    level = sustain_volume
+                    state = ENV_SUSTAIN
+
+            elif state == ENV_RELEASE:
+                level -= release_delta
+                if level <= 0.0:
                     self.level = 0.0
                     self.state = ENV_OFF
+                    return True
 
-            buffer[n] *= self.level / len(self.oscs)
+            sample = 0.0
+            for osc in oscs:
+                sample += osc.sample()
+
+            buffer[n] += sample * level * norm_factor
+
+        self.state = state
+        self.level = level
+
+        return False
 
 
 class Synth:
@@ -217,19 +231,17 @@ class Synth:
     def audio_callback(self, userdata, stream, length):
 
         count = length // 4
-        out_buf = [0.0] * count
+        out_ptr = ctypes.cast(stream, ctypes.POINTER(ctypes.c_float))
 
         for pitch, env in list(self.envelopes.items()):
-            if env.state == ENV_OFF:
+            if env.add_frames(out_ptr, count):
                 del self.envelopes[pitch]
-            else:
-                env.add_frames(out_buf)
 
-        out_ptr = ctypes.cast(stream, ctypes.POINTER(ctypes.c_float))
+        lpf_state = self.lpf_state
         for n in range(count):
-            self.lpf_state += (out_buf[n] - self.lpf_state) * LPF_ALPHA
-            out_ptr[n] = self.lpf_state * MASTER_VOL
-
+            lpf_state += (out_ptr[n] - lpf_state) * LPF_ALPHA
+            out_ptr[n] = lpf_state * MASTER_VOL
+        self.lpf_state = lpf_state
 
 SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO)
 TTF_Init()
