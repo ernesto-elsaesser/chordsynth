@@ -8,7 +8,7 @@ from pysdl.sdlttf import *
 
 
 SAMPLE_RATE = 16000
-BLOCK_SIZE = 512
+BLOCK_SIZE = 256
 MASTER_VOL = 0.2
 
 # frequency detune, LFO frequency, LFO depth
