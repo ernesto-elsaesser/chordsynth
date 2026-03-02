@@ -18,6 +18,8 @@ UNISON = [
     (0.99, 5.4, 0.001),
 ]
 
+LFO_UPDATE_INTERVAL = 16
+
 ATTACK_TIME = 0.05
 DECAY_TIME = 0.05
 RELEASE_TIME = 0.5
@@ -110,18 +112,21 @@ class SawtoothOscillator:
         self.phase_delta = TWOPI * frequency / SAMPLE_RATE
 
         self.lfo_phase = 0.0
+        self.lfo_level = 0.0
         self.lfo_delta = TWOPI * lfo_frequency / SAMPLE_RATE
         self.lfo_depth = lfo_depth
 
+    def lfo_step(self, frame_count: int):
+
+        self.lfo_level = 1.0 + self.lfo_depth * math.sin(self.lfo_phase)
+        self.lfo_phase = (self.lfo_phase + self.lfo_delta * frame_count) % TWOPI
+
     def sample(self) -> float:
 
-        lfo_sample = math.sin(self.lfo_phase)
-        self.lfo_phase = (self.lfo_phase + self.lfo_delta) % TWOPI
-
-        sample = 2.0 * (self.phase / TWOPI) - 1.0
-        mod_delta = self.phase_delta * (1.0 + self.lfo_depth * lfo_sample)
-        self.phase = (self.phase + mod_delta) % TWOPI
-
+        phase = self.phase
+        sample = 2.0 * (phase / TWOPI) - 1.0
+        mod_delta = self.phase_delta * self.lfo_level
+        self.phase = (phase + mod_delta) % TWOPI
         return sample
 
 
@@ -188,6 +193,10 @@ class ADSREnvelope:
                 sample += osc.sample()
 
             buffer[n] += sample * level * norm_factor
+
+            if n % LFO_UPDATE_INTERVAL == 0:
+                for osc in oscs:
+                    osc.lfo_step(LFO_UPDATE_INTERVAL)
 
         self.state = state
         self.level = level
