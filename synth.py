@@ -160,6 +160,12 @@ class ADSREnvelope:
 
     def add_frames(self, buffer, count: int) -> bool:
 
+        state = self.state
+        level = self.level
+
+        if state == ENV_OFF:
+            return True
+
         oscs = self.oscs
         sustain_volume = self.sustain_volume
 
@@ -168,8 +174,6 @@ class ADSREnvelope:
         release_delta = 1 / (RELEASE_TIME * SAMPLE_RATE)
         norm_factor = 1  / len(self.oscs)
 
-        state = self.state
-        level = self.level
 
         for n in range(count):
 
